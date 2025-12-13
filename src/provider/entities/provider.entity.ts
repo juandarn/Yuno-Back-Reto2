@@ -6,7 +6,7 @@ export class Provider {
   id: string;
 
   @Column({ type: 'text' })
-  nombre: string;
+  name: string;
 
   // @OneToMany(() => Ruta, (ruta) => ruta.provider)
   // rutas: Ruta[];

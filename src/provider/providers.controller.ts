@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ProvidersService } from './providers.service';
 import { CreateProviderDto } from './dto/create-provider.dto';
 import { UpdateProviderDto } from './dto/update-provider.dto';
@@ -8,6 +18,7 @@ export class ProvidersController {
   constructor(private readonly providersService: ProvidersService) {}
 
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   create(@Body() createProviderDto: CreateProviderDto) {
     return this.providersService.create(createProviderDto);
   }
@@ -19,16 +30,20 @@ export class ProvidersController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.providersService.findOne(+id);
+    return this.providersService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateProviderDto: UpdateProviderDto) {
-    return this.providersService.update(+id, updateProviderDto);
+  update(
+    @Param('id') id: string,
+    @Body() updateProviderDto: UpdateProviderDto,
+  ) {
+    return this.providersService.update(id, updateProviderDto);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.providersService.remove(+id);
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Param('id') id: string) {
+    await this.providersService.remove(id);
   }
 }

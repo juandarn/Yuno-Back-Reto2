@@ -1,11 +1,12 @@
-// src/payment-methods/entities/payment-method.entity.ts
-// PLACEHOLDER - This file must be implemented by Federico
-import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
 import { Transaction } from '../../transaction/entities/transaction.entity';
 
-@Entity('PAYMENT_METHODS')
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+// Si ya tienes esta entidad, descomenta la relación:
+// import { Transaccion } from '../../transacciones/entities/transaccion.entity';
+
+@Entity({ name: 'metodos_pago' })
 export class PaymentMethod {
-  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;
 
   @Column({ type: 'text' })

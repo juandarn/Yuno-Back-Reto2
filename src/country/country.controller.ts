@@ -1,34 +1,53 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { CountryService } from './country.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  HttpCode,
+  HttpStatus,
+  Query,
+} from '@nestjs/common';
+import { CountriesService } from './country.service';
 import { CreateCountryDto } from './dto/create-country.dto';
 import { UpdateCountryDto } from './dto/update-country.dto';
 
-@Controller('country')
-export class CountryController {
-  constructor(private readonly countryService: CountryService) {}
+@Controller('countries')
+export class CountriesController {
+  constructor(private readonly countriesService: CountriesService) {}
 
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   create(@Body() createCountryDto: CreateCountryDto) {
-    return this.countryService.create(createCountryDto);
+    return this.countriesService.create(createCountryDto);
   }
 
   @Get()
-  findAll() {
-    return this.countryService.findAll();
+  findAll(@Query('name') name?: string) {
+    if (name) {
+      return this.countriesService.searchByName(name);
+    }
+    return this.countriesService.findAll();
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.countryService.findOne(+id);
+  @Get(':code')
+  findOne(@Param('code') code: string) {
+    return this.countriesService.findOne(code);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateCountryDto: UpdateCountryDto) {
-    return this.countryService.update(+id, updateCountryDto);
+  @Patch(':code')
+  update(
+    @Param('code') code: string,
+    @Body() updateCountryDto: UpdateCountryDto,
+  ) {
+    return this.countriesService.update(code, updateCountryDto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.countryService.remove(+id);
+  @Delete(':code')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Param('code') code: string) {
+    await this.countriesService.remove(code);
   }
 }
