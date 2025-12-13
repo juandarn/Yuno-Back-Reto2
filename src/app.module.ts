@@ -3,6 +3,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { ProvidersModule } from './provider/providers.module';
 import { CountryModule } from './country/country.module';
+import { MerchantsModule } from './merchant/merchant.module';
+import { UsersModule } from './user/user.module';
+import { TransactionsModule } from './transaction/transaction.module';
 
 @Module({
   imports: [
@@ -19,6 +22,9 @@ import { CountryModule } from './country/country.module';
     PaymentMethodModule,
     ProvidersModule,
     CountryModule,
+    MerchantsModule,
+    UsersModule,
+    TransactionsModule
   ],
   controllers: [],
   providers: [],
