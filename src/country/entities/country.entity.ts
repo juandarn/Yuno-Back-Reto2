@@ -1,11 +1,13 @@
 import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
+import { Transaction } from '../../transaction/entities/transaction.entity';
 
-@Entity({ name: 'paises' })
-export class Pais {
+export class Country {
   @PrimaryColumn({ type: 'char', length: 2 })
-  codigo: string; // ej: "CO", "MX"
+  code: string;
 
   @Column({ type: 'text' })
-  nombre: string;
-}
+  name: string;
 
+  @OneToMany(() => Transaction, (transaction) => transaction.country)
+  transactions: Transaction[];
+}
