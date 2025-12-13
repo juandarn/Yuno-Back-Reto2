@@ -4,7 +4,7 @@ import { UpdateSeedDto } from './dto/update-seed.dto';
 
 @Injectable()
 export class SeedService {
-  seed(createSeedDto: CreateSeedDto) {
+  seed() {
     return 'This action adds a new seed';
   }
 }
