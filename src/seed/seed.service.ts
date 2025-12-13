@@ -55,17 +55,20 @@ export class SeedService {
       // Reset opcional (limpia todo y vuelve a sembrar)
       // ------------------------------------------------------------------
       if (reset) {
-        // Orden importante por FK: primero hijos, luego padres
-        await notifRepo.delete({});
-        await alertRepo.delete({});
-        await metricRepo.delete({});
-        await txRepo.delete({});
-        await userRepo.delete({});
-        await channelRepo.delete({});
-        await merchantRepo.delete({});
-        await providerRepo.delete({});
-        await methodRepo.delete({});
-        await countryRepo.delete({});
+        await runner.query(`
+          TRUNCATE TABLE
+            "notifications",
+            "alerts",
+            "metrics",
+            "TRANSACTIONS",
+            "USERS",
+            "notification_channel",
+            "MERCHANTS",
+            "providers",
+            "payment_method",
+            "countries"
+          RESTART IDENTITY CASCADE;
+        `);
       }
 
       // Si ya existe data, evita duplicar (modo no-reset)
