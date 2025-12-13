@@ -13,16 +13,16 @@ export class Metric {
   id: string;
 
   @Column({ type: 'varchar', length: 100 })
-  tipo: string;
+  type: string;
 
   @CreateDateColumn({ type: 'timestamp' })
   timestamptz: Date;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
-  valor: number;
+  value: number;
 
   @Column({ type: 'text', nullable: true })
-  muestra: string;
+  sample: string;
 
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
   score_anomalia: number;
@@ -56,7 +56,4 @@ export class Metric {
 
   @Column({ type: 'timestamp' })
   end_window: Date;
-
-  @Column({ type: 'text' })
-  type: string;
 }
