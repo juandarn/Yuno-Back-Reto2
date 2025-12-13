@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
 import { Transaction } from '../../transaction/entities/transaction.entity';
 
+@Entity('countries')
 export class Country {
   @PrimaryColumn({ type: 'char', length: 2 })
   code: string;
