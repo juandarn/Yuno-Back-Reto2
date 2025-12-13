@@ -19,6 +19,7 @@ import { PaymentMethod } from './payment-method/entities/payment-method.entity';
 import { Transaction } from './transaction/entities/transaction.entity';
 import { Provider } from './provider/entities/provider.entity';
 import { Notification } from './notification/entities/notification.entity';
+import { SeedModule } from './seed/seed.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { Notification } from './notification/entities/notification.entity';
     MerchantsModule,
     UsersModule,
     TransactionsModule,
+    SeedModule,
   ],
 })
 export class AppModule {}

@@ -1,13 +1,13 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
 import { Notification } from '../../notification/entities/notification.entity';
 
-@Entity('canales_notificacion')
+@Entity('notification_channel')
 export class NotificationChannel {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'varchar', length: 255 })
-  nombre: string;
+  name: string;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   email: string;
