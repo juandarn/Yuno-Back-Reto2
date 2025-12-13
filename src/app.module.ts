@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+
 import { PaymentMethodModule } from './payment-method/payment-method.module';
 import { ProvidersModule } from './provider/providers.module';
 import { CountryModule } from './country/country.module';
 import { MerchantsModule } from './merchant/merchant.module';
 import { UsersModule } from './user/user.module';
 import { TransactionsModule } from './transaction/transaction.module';
+
 import { Alert } from './alert/entities/alert.entity';
 import { Country } from './country/entities/country.entity';
 import { Merchant } from './merchant/entities/merchant.entity';
@@ -19,27 +22,47 @@ import { Notification } from './notification/entities/notification.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: 'localhost',
-      port: 5432,
-      username: 'usuario',
-      password: 'usuario',
-      database: 'yuno',
-      entities: [
-        Alert,
-        Country,
-        Merchant,
-        Metric,
-        Notification,
-        NotificationChannel,
-        User,
-        Transaction,
-        PaymentMethod,
-        Provider,
-      ],
-      synchronize: true,
+    ConfigModule.forRoot({ isGlobal: true }),
+
+    TypeOrmModule.forRootAsync({
+      useFactory: () => {
+        const toBool = (v?: string, def = false) =>
+          (v ?? String(def)).toLowerCase() === 'true';
+
+        const isProd = (process.env.APP_STAGE || '').toLowerCase() === 'prod';
+
+        return {
+          type: (process.env.DATABASE_TYPE as any) || 'postgres',
+          host: process.env.DATABASE_HOST,
+          port: Number(process.env.DATABASE_PORT || 5432),
+          username: process.env.DATABASE_USERNAME,
+          password: process.env.DATABASE_PASSWORD,
+          database: process.env.DATABASE_DB_NAME,
+          autoLoadEntities: toBool(
+            process.env.DATABASE_DB_AUTO_LOAD_ENTITIES,
+            true,
+          ),
+          entities: [
+            Alert,
+            Country,
+            Merchant,
+            Metric,
+            Notification,
+            NotificationChannel,
+            User,
+            Transaction,
+            PaymentMethod,
+            Provider,
+          ],
+
+          synchronize: toBool(process.env.DATABASE_DB_SYNC, !isProd),
+          ssl: toBool(process.env.DATABASE_SSL, isProd)
+            ? { rejectUnauthorized: false }
+            : false,
+        };
+      },
     }),
+
     PaymentMethodModule,
     ProvidersModule,
     CountryModule,
@@ -47,7 +70,5 @@ import { Notification } from './notification/entities/notification.entity';
     UsersModule,
     TransactionsModule,
   ],
-  controllers: [],
-  providers: [],
 })
 export class AppModule {}
