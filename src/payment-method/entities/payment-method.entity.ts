@@ -1,17 +1,17 @@
-export class PaymentMethod {}
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-// Si ya tienes esta entidad, descomenta la relación:
-// import { Transaccion } from '../../transacciones/entities/transaccion.entity';
+// src/payment-methods/entities/payment-method.entity.ts
+// PLACEHOLDER - This file must be implemented by Federico
+import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
+import { Transaction } from '../../transaction/entities/transaction.entity';
 
-@Entity({ name: 'metodos_pago' })
-export class MetodoPago {
-  @PrimaryGeneratedColumn({ type: 'bigint' })
+@Entity('PAYMENT_METHODS')
+export class PaymentMethod {
+  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
   id: string;
 
   @Column({ type: 'text' })
-  nombre: string;
+  name: string;
 
-  // UML: MetodosPago "usa" Transacciones (1:N)
-  // @OneToMany(() => Transaccion, (tx) => tx.metodo)
-  // transacciones: Transaccion[];
+  // Relations
+  @OneToMany(() => Transaction, transaction => transaction.method)
+  transactions: Transaction[];
 }
