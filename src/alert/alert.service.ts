@@ -119,7 +119,7 @@ export class AlertService {
             body: alert.explicacion || 'No hay detalles adicionales disponibles.',
             metadata: {
               alertId: alert.id,
-              metricId: alert.metrica_id,
+              metricId: alert.metric_id,
               severity: alert.severidad,
               merchantId: alert.merchant_id,
               timestamp: alert.fecha,

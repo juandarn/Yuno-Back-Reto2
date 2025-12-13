@@ -4,7 +4,7 @@ import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 // Si ya tienes esta entidad, descomenta la relación:
 // import { Transaccion } from '../../transacciones/entities/transaccion.entity';
 
-@Entity({ name: 'metodos_pago' })
+@Entity({ name: 'payment_method' })
 export class PaymentMethod {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;

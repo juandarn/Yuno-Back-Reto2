@@ -11,16 +11,16 @@ import { Metric } from '../../metric/entities/metric.entity';
 import { Notification } from '../../notification/entities/notification.entity';
 import { Merchant } from '../../merchant/entities/merchant.entity';
 
-@Entity('alertas')
+@Entity('alerts')
 export class Alert {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'uuid' })
-  metrica_id: string;
+  metric_id: string;
 
   @ManyToOne(() => Metric, (metric) => metric.alerts, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'metrica_id' })
+  @JoinColumn({ name: 'metric_id' })
   metric: Metric;
 
   @CreateDateColumn({ type: 'timestamp' })

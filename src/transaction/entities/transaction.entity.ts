@@ -8,19 +8,19 @@ import { TxStatus, TxErrorType } from '../../common/enums';
 
 @Entity('TRANSACTIONS')
 export class Transaction {
-  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'timestamp' })
   date: Date;
 
-  @Column({ type: 'bigint' })
+  @Column({ type: 'uuid' })
   merchant_id: string;
 
-  @Column({ type: 'bigint' })
+  @Column({ type: 'uuid' })
   provider_id: string;
 
-  @Column({ type: 'bigint' })
+  @Column({ type: 'uuid' })
   method_id: string;
 
   @Column({ type: 'char', length: 2 })

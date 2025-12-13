@@ -10,30 +10,30 @@ import { Alert } from '../../alert/entities/alert.entity';
 import { NotificationChannel } from '../../notification-channel/entities/notification-channel.entity';
 import { User } from '../../user/entities/user.entity';
 
-@Entity('notificaciones')
+@Entity('notifications')
 export class Notification {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'uuid' })
-  alerta_id: string;
+  alert_id: string;
 
   @ManyToOne(() => Alert, (alert) => alert.notifications, {
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'alerta_id' })
+  @JoinColumn({ name: 'alert_id' })
   alert: Alert;
 
   @Column({ type: 'uuid' })
-  usuario_id: string;
+  user_id: string;
 
   @Column({ type: 'uuid' })
-  canal_id: string;
+  channel_id: string;
 
   @ManyToOne(() => NotificationChannel, (channel) => channel.notifications, {
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'canal_id' })
+  @JoinColumn({ name: 'channel_id' })
   channel: NotificationChannel;
 
   @CreateDateColumn({ type: 'timestamp' })
@@ -46,6 +46,6 @@ export class Notification {
   payload: any;
 
   @ManyToOne(() => User, (user) => user.notifications, { nullable: false })
-  @JoinColumn({ name: 'usuario_id' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 }

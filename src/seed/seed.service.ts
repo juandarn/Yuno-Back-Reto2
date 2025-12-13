@@ -305,7 +305,7 @@ export class SeedService {
             },
           ] as DeepPartial<Metric>[]);
 
-          await metricRepo.save(metrics);
+          const savedMetrics = await metricRepo.save(metrics);
 
           if (errorRate >= TH_ERROR_RATE_WARNING || p95 >= TH_P95_WARNING) {
             const severity =
@@ -321,18 +321,23 @@ export class SeedService {
               `approval_rate=${approvalRate.toFixed(3)} | error_rate=${errorRate.toFixed(3)} | p95_latency=${Math.round(p95)}ms\n` +
               `sample=${mTx.length}`;
 
-            const alert = await alertRepo.save(
-              alertRepo.create({
-                date: end.toISOString(),
-                severity,
-                status: 'open',
-                title,
-                explanation,
-                merchant_id: m.id,
-              } as any),
-            );
+            const metricForAlert =
+              savedMetrics.find(mt => (mt as any).type === 'error_rate' || (mt as any).tipo === 'error_rate')
+              ?? savedMetrics[0];
 
-            createdAlerts.push(alert[0]);
+            const alertEntity = alertRepo.create({
+              metric_id: (metricForAlert as any).id,      // ✅ FK NOT NULL
+              fecha: end,                                // o end.toISOString() según tu entity
+              severidad: severity,                       // 'warning' | 'critical'
+              estado: 'open',                            // open|ack|resolved
+              titulo: title,
+              explicacion: explanation,
+              merchant_id: m.id,                         // si tu entidad tiene merchant_id
+            } as DeepPartial<Alert>);
+
+            const savedAlert = await alertRepo.save(alertEntity);
+            createdAlerts.push(savedAlert);
+
           }
         }
       }

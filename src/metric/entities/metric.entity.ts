@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 import { Alert } from '../../alert/entities/alert.entity';
 
-@Entity('metricas')
+@Entity('metrics')
 export class Metric {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -34,10 +34,10 @@ export class Metric {
   provider_id: string;
 
   @Column({ type: 'uuid', nullable: true })
-  metodo_id: string;
+  method_id: string;
 
   @Column({ type: 'char', length: 2, nullable: true })
-  pais_codigo: string;
+  country_code: string;
 
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
   approval_rate: number;

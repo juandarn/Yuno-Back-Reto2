@@ -6,7 +6,7 @@ import { Alert } from '../../alert/entities/alert.entity';
 
 @Entity('MERCHANTS')
 export class Merchant {
-  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'text' })

@@ -64,14 +64,14 @@ export class NotificationService {
 
   async findByUser(userId: string): Promise<Notification[]> {
     return await this.notificationRepository.find({
-      where: { usuario_id: userId },
+      where: { user_id: userId },
       order: { enviado_en: 'DESC' },
     });
   }
 
   async findByAlert(alertId: string): Promise<Notification[]> {
     return await this.notificationRepository.find({
-      where: { alerta_id: alertId },
+      where: { alert_id: alertId },
       order: { enviado_en: 'DESC' },
     });
   }
