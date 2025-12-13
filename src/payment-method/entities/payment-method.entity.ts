@@ -12,7 +12,7 @@ export class PaymentMethod {
   @Column({ type: 'text' })
   name: string;
 
-  // UML: MetodosPago "usa" Transacciones (1:N)
-  @OneToMany(() => Transaction, (transaction) => transaction.paymentMethod)
+  // Relations
+  @OneToMany(() => Transaction, transaction => transaction.method)
   transactions: Transaction[];
 }
