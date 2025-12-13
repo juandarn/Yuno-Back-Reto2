@@ -57,7 +57,7 @@ export class MetricService {
 
   async findByType(type: string, limit: number = 50): Promise<Metric[]> {
     return await this.metricRepository.find({
-      where: { tipo: type },
+      where: { type: type },
       order: { timestamptz: 'DESC' },
       take: limit,
     });
@@ -101,7 +101,7 @@ export class MetricService {
 
     return {
       count: metrics.length,
-      avgValue: this.calculateAverage(metrics.map((m) => m.valor)),
+      avgValue: this.calculateAverage(metrics.map((m) => m.value)),
       avgErrorRate: this.calculateAverage(metrics.map((m) => m.error_rate)),
       avgApprovalRate: this.calculateAverage(
         metrics.map((m) => m.approval_rate),
