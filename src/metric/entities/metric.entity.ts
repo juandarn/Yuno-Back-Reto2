@@ -21,8 +21,8 @@ export class Metric {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   value: number;
 
-  @Column({ type: 'text', nullable: true })
-  sample: string;
+  @Column({ type: 'int', nullable: true })
+  sample: number;
 
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
   score_anomalia: number;
