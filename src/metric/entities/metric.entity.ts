@@ -55,5 +55,5 @@ export class Metric {
   start_window: Date;
 
   @Column({ type: 'timestamp' })
-  end_windows: Date;
+  end_window: Date;
 }
