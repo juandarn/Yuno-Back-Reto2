@@ -20,6 +20,11 @@ import { Transaction } from './transaction/entities/transaction.entity';
 import { Provider } from './provider/entities/provider.entity';
 import { Notification } from './notification/entities/notification.entity';
 import { SeedModule } from './seed/seed.module';
+import { HealthGraphModule } from './health-graph/health-graph.module';
+import { AlertModule } from './alert/alert.module';
+import { NotificationModule } from './notification/notification.module';
+import { NotificationChannelModule } from './notification-channel/notification-channel.module';
+import { MetricModule } from './metric/metric.module';
 
 @Module({
   imports: [
@@ -71,6 +76,11 @@ import { SeedModule } from './seed/seed.module';
     UsersModule,
     TransactionsModule,
     SeedModule,
+    HealthGraphModule,
+    AlertModule,
+    NotificationModule,
+    NotificationChannelModule,
+    MetricModule,
   ],
 })
 export class AppModule {}

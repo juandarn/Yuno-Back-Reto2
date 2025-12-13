@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { DataSource, DeepPartial } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 // Ajusta imports según tus enums/ubicación real:
 import { TxStatus } from '../common/enums';
@@ -21,9 +21,6 @@ type SeedOptions = { reset?: boolean };
 function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-function pick<T>(arr: T[]) {
-  return arr[randInt(0, arr.length - 1)];
-}
 function percentile(sorted: number[], p: number) {
   if (!sorted.length) return 0;
   const idx = Math.ceil((p / 100) * sorted.length) - 1;
@@ -32,7 +29,7 @@ function percentile(sorted: number[], p: number) {
 
 @Injectable()
 export class SeedService {
-  constructor(private readonly dataSource: DataSource) { }
+  constructor(private readonly dataSource: DataSource) {}
 
   async seed(opts: SeedOptions = {}) {
     const reset = !!opts.reset;
@@ -87,31 +84,29 @@ export class SeedService {
         { code: 'MX', name: 'Mexico' },
         { code: 'BR', name: 'Brazil' },
         { code: 'US', name: 'United States' },
-        { code: 'CL', name: 'Chile' },
-        { code: 'AR', name: 'Argentina' },
       ]);
 
       const methods = await methodRepo.save([
-        { name: 'CARD' },
+        { name: 'Tarjeta de Crédito' },
         { name: 'PSE' },
-        { name: 'BANK_TRANSFER' },
-        { name: 'WALLET' },
+        { name: 'Transferencia Bancaria' },
+        { name: 'Wallet Digital' },
       ]);
 
       const providers = await providerRepo.save([
         { name: 'Stripe' },
         { name: 'Adyen' },
+        { name: 'DLocal' },
         { name: 'PayU' },
-        { name: 'MercadoPago' },
       ]);
 
       // ------------------------------------------------------------------
       // 2) Merchants
       // ------------------------------------------------------------------
       const merchants = await merchantRepo.save([
-        { name: 'ABC Store' },
-        { name: 'XYZ E-commerce' },
-        { name: '123 Marketplace' },
+        { name: 'Shopito' },
+        { name: 'StoreX' },
+        { name: 'Zoop' },
       ]);
 
       // ------------------------------------------------------------------
@@ -128,15 +123,6 @@ export class SeedService {
           userRepo.create({
             email: `admin@${String(m.name).toLowerCase().replace(/\s+/g, '')}.com`,
             name: `${m.name} Admin`,
-            type: 'MERCHANT',
-            merchant_id: m.id,
-            active: true,
-          }),
-        );
-        merchantUsers.push(
-          userRepo.create({
-            email: `ops@${String(m.name).toLowerCase().replace(/\s+/g, '')}.com`,
-            name: `${m.name} Ops`,
             type: 'MERCHANT',
             merchant_id: m.id,
             active: true,
@@ -159,105 +145,194 @@ export class SeedService {
           active: true,
           config: { webhookUrl: 'https://example.com/fake-slack-webhook', channel: '#alerts' },
         },
-        {
-          name: 'webhook',
-          active: true,
-          config: { url: 'https://example.com/merchant-webhook', headers: { 'X-Seed': 'true' } },
-        },
       ]);
 
-      const emailChannel = channels.find(c => c.name === 'email')!;
-      const slackChannel = channels.find(c => c.name === 'slack')!;
-      const webhookChannel = channels.find(c => c.name === 'webhook')!;
-
       // ------------------------------------------------------------------
-      // 5) Transactions
+      // 5) Transacciones - escenarios específicos para health graph
       // ------------------------------------------------------------------
-      const baseDate = new Date();
-      baseDate.setDate(baseDate.getDate() - 30);
+      const now = new Date();
+      const txsToInsert: Transaction[] = [];
 
-      const statusWeights = [
-        { status: TxStatus.APPROVED, w: 70 },
-        { status: TxStatus.DECLINED, w: 18 },
-        { status: TxStatus.ERROR, w: 8 },
-        { status: TxStatus.TIMEOUT, w: 4 },
-      ];
-      const errorTypes = ['provider_down', 'network', 'config', 'timeout'];
+      const makeTx = (p: {
+        date: Date;
+        merchant_id: any;
+        provider_id: any;
+        method_id: any;
+        country_code: string;
+        status: TxStatus;
+        latency_ms: number;
+        error_type?: any;
+      }): any => {
+        const base: any = {
+          date: p.date, // IMPORTANTE: Date, no string
+          merchant_id: p.merchant_id,
+          provider_id: p.provider_id,
+          method_id: p.method_id,
+          country_code: p.country_code,
+          status: p.status,
+          latency_ms: p.latency_ms,
+        };
 
-      function weightedStatus() {
-        const total = statusWeights.reduce((s, x) => s + x.w, 0);
-        const r = randInt(1, total);
-        let acc = 0;
-        for (const sw of statusWeights) {
-          acc += sw.w;
-          if (r <= acc) return sw.status;
-        }
-        return TxStatus.APPROVED;
+        // IMPORTANTE: no usar null. Si no hay error, no seteamos error_type.
+        if (p.error_type !== undefined) base.error_type = p.error_type;
+
+        return txRepo.create(base);
+      };
+
+      // ESCENARIO 1: OK - Shopito -> Stripe -> Tarjeta -> CO
+      for (let i = 0; i < 150; i++) {
+        const date = new Date(now.getTime() - randInt(1, 60) * 60000);
+        const status = Math.random() < 0.95 ? TxStatus.APPROVED : TxStatus.DECLINED;
+
+        txsToInsert.push(
+          makeTx({
+            date,
+            merchant_id: merchants[0].id,
+            provider_id: providers[0].id,
+            method_id: methods[0].id,
+            country_code: 'CO',
+            status,
+            latency_ms: randInt(200, 500),
+          }),
+        );
       }
 
-      const txsToInsert: Transaction[] = [];
-      for (let i = 0; i < 250; i++) {
-        const date = new Date(baseDate);
-        date.setDate(date.getDate() + randInt(0, 29));
-        date.setHours(randInt(0, 23), randInt(0, 59), randInt(0, 59), 0);
+      // ESCENARIO 2: WARNING - StoreX -> Adyen -> PSE -> CO
+      for (let i = 0; i < 100; i++) {
+        const date = new Date(now.getTime() - randInt(1, 60) * 60000);
 
-        const merchant = pick(merchants);
-        const provider = pick(providers);
-        const method = pick(methods);
-        const country = pick(countries);
+        let status: TxStatus;
+        let error_type: any = undefined;
+        let latency: number;
 
-        const status = weightedStatus();
-
-        const providerBias =
-          String((provider as any).name).toLowerCase().includes('stripe') ? 120 :
-            String((provider as any).name).toLowerCase().includes('adyen') ? 160 :
-              String((provider as any).name).toLowerCase().includes('payu') ? 220 :
-                200;
-
-        let latency = randInt(80, 900) + providerBias;
-
-        let error_type: string | null = null;
-        if (status === TxStatus.ERROR) {
-          error_type = pick(errorTypes.filter(e => e !== 'timeout'));
-          latency += randInt(200, 700);
-        }
-        if (status === TxStatus.TIMEOUT) {
-          error_type = 'timeout';
-          latency = randInt(1500, 4000);
+        const r = Math.random();
+        if (r < 0.65) {
+          status = TxStatus.APPROVED;
+          latency = randInt(800, 2000);
+        } else if (r < 0.82) {
+          status = TxStatus.DECLINED;
+          latency = randInt(600, 1500);
+        } else {
+          status = TxStatus.ERROR;
+          error_type = 'network';
+          latency = randInt(2000, 4000);
         }
 
         txsToInsert.push(
-          txRepo.create({
-            date: date.toISOString(),
-            merchant_id: merchant.id,
-            provider_id: provider.id,
-            method_id: method.id,
-            country_code: country.code,
+          makeTx({
+            date,
+            merchant_id: merchants[1].id,
+            provider_id: providers[1].id,
+            method_id: methods[1].id,
+            country_code: 'CO',
             status,
             error_type,
             latency_ms: latency,
-          } as DeepPartial<Transaction>),
+          }),
         );
+      }
+
+      // ESCENARIO 3: CRITICAL - múltiples merchants -> DLocal -> PSE -> CO
+      for (const merchant of merchants) {
+        for (let i = 0; i < 60; i++) {
+          const date = new Date(now.getTime() - randInt(1, 60) * 60000);
+
+          let status: TxStatus;
+          let error_type: any = undefined;
+          let latency: number;
+
+          const r = Math.random();
+          if (r < 0.35) {
+            status = TxStatus.APPROVED;
+            latency = randInt(3000, 6000);
+          } else if (r < 0.5) {
+            status = TxStatus.DECLINED;
+            latency = randInt(2000, 4000);
+          } else if (r < 0.8) {
+            status = TxStatus.ERROR;
+            error_type = 'provider_down';
+            latency = randInt(5000, 10000);
+          } else {
+            status = TxStatus.TIMEOUT;
+            error_type = 'timeout';
+            latency = randInt(8000, 15000);
+          }
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchant.id,
+              provider_id: providers[2].id,
+              method_id: methods[1].id,
+              country_code: 'CO',
+              status,
+              error_type,
+              latency_ms: latency,
+            }),
+          );
+        }
+      }
+
+      // ESCENARIO 4: misma ruta pero OK en México (contraste)
+      for (let i = 0; i < 120; i++) {
+        const date = new Date(now.getTime() - randInt(1, 60) * 60000);
+        const status = Math.random() < 0.92 ? TxStatus.APPROVED : TxStatus.DECLINED;
+
+        txsToInsert.push(
+          makeTx({
+            date,
+            merchant_id: merchants[0].id,
+            provider_id: providers[2].id,
+            method_id: methods[1].id,
+            country_code: 'MX',
+            status,
+            latency_ms: randInt(300, 700),
+          }),
+        );
+      }
+
+      // ESCENARIO 5: rutas OK extra para variedad
+      const additionalRoutes = [
+        { merchant: 1, provider: 0, method: 0, country: 'MX', approval: 0.88 },
+        { merchant: 2, provider: 1, method: 2, country: 'BR', approval: 0.91 },
+        { merchant: 0, provider: 3, method: 3, country: 'US', approval: 0.93 },
+      ];
+
+      for (const route of additionalRoutes) {
+        for (let i = 0; i < 80; i++) {
+          const date = new Date(now.getTime() - randInt(1, 60) * 60000);
+          const status = Math.random() < route.approval ? TxStatus.APPROVED : TxStatus.DECLINED;
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: providers[route.provider].id,
+              method_id: methods[route.method].id,
+              country_code: route.country,
+              status,
+              latency_ms: randInt(300, 800),
+            }),
+          );
+        }
       }
 
       const insertedTxs = await txRepo.save(txsToInsert);
 
       // ------------------------------------------------------------------
-      // 6) Metrics + Alerts (ventanas diarias por merchant)
+      // 6) Métricas agregadas por merchant (como en el seed original)
       // ------------------------------------------------------------------
-      const TH_ERROR_RATE_WARNING = 0.08;
-      const TH_ERROR_RATE_CRIT = 0.15;
-      const TH_P95_WARNING = 1200;
-      const TH_P95_CRIT = 2000;
-
       const byDay = new Map<string, Transaction[]>();
       for (const t of insertedTxs) {
-        const dayKey = new Date((t as any).date).toISOString().slice(0, 10);
+        const d: Date = (t as any).date instanceof Date ? (t as any).date : new Date((t as any).date);
+        const dayKey = d.toISOString().slice(0, 10);
         if (!byDay.has(dayKey)) byDay.set(dayKey, []);
         byDay.get(dayKey)!.push(t);
       }
 
       const createdAlerts: Alert[] = [];
+      const TH_ERROR_RATE_WARNING = 0.08;
+      const TH_ERROR_RATE_CRIT = 0.15;
 
       for (const [dayKey, txs] of byDay.entries()) {
         const start = new Date(`${dayKey}T00:00:00.000Z`);
@@ -303,115 +378,36 @@ export class SeedService {
               sample: mTx.length,
               merchant_id: m.id,
             },
-          ] as DeepPartial<Metric>[]);
+          ] as any[]);
 
-          const savedMetrics = await metricRepo.save(metrics);
+          const savedMetrics = await metricRepo.save(metrics as any);
 
-          if (errorRate >= TH_ERROR_RATE_WARNING || p95 >= TH_P95_WARNING) {
-            const severity =
-              errorRate >= TH_ERROR_RATE_CRIT || p95 >= TH_P95_CRIT ? 'critical' : 'warning';
-
-            const title =
-              errorRate >= TH_ERROR_RATE_WARNING
-                ? `High error rate for merchant ${m.name}`
-                : `High latency (p95) for merchant ${m.name}`;
-
+          if (errorRate >= TH_ERROR_RATE_WARNING) {
+            const severity = errorRate >= TH_ERROR_RATE_CRIT ? 'critical' : 'warning';
+            const title = `High error rate for merchant ${m.name}`;
             const explanation =
               `Window: ${dayKey}\n` +
               `approval_rate=${approvalRate.toFixed(3)} | error_rate=${errorRate.toFixed(3)} | p95_latency=${Math.round(p95)}ms\n` +
               `sample=${mTx.length}`;
 
             const metricForAlert =
-              savedMetrics.find(mt => (mt as any).type === 'error_rate' || (mt as any).tipo === 'error_rate')
-              ?? savedMetrics[0];
+              (savedMetrics as any[]).find(mt => (mt as any).type === 'error_rate') ?? (savedMetrics as any[])[0];
 
             const alertEntity = alertRepo.create({
-              metric_id: (metricForAlert as any).id,      // ✅ FK NOT NULL
-              fecha: end,                                // o end.toISOString() según tu entity
-              severidad: severity,                       // 'warning' | 'critical'
-              estado: 'open',                            // open|ack|resolved
+              metric_id: (metricForAlert as any).id,
+              fecha: end,
+              severidad: severity,
+              estado: 'open',
               titulo: title,
               explicacion: explanation,
-              merchant_id: m.id,                         // si tu entidad tiene merchant_id
-            } as DeepPartial<Alert>);
+              merchant_id: m.id,
+            } as any);
 
-            const savedAlert = await alertRepo.save(alertEntity);
+            const savedAlert = await alertRepo.save(alertEntity as any);
             createdAlerts.push(savedAlert);
-
           }
         }
       }
-
-      // ------------------------------------------------------------------
-      // 7) Notifications (por alerta: YUNO + merchant users + canales)
-      // ------------------------------------------------------------------
-      const allMerchantUsers = await userRepo.find({ where: { type: 'MERCHANT' } as any });
-      const allYunoUsers = await userRepo.find({ where: { type: 'YUNO' } as any });
-
-      const notifRows: Notification[] = [];
-
-      for (const alert of createdAlerts) {
-        const recipients: User[] = [...allYunoUsers];
-
-        if ((alert as any).merchant_id) {
-          recipients.push(
-            ...allMerchantUsers.filter(
-              u => String((u as any).merchant_id) === String((alert as any).merchant_id),
-            ),
-          );
-        }
-
-        for (const user of recipients) {
-          notifRows.push(
-            notifRepo.create({
-              alert_id: (alert as any).id,
-              user_id: (user as any).id,
-              channel_id: (emailChannel as any).id,
-              sent_at: new Date().toISOString(),
-              status: 'pending',
-              payload: {
-                to: (user as any).email,
-                subject: `[${String((alert as any).severity).toUpperCase()}] ${(alert as any).title}`,
-                body: (alert as any).explanation,
-              },
-            } as DeepPartial<Notification>),
-          );
-
-          notifRows.push(
-            notifRepo.create({
-              alert_id: (alert as any).id,
-              user_id: (user as any).id,
-              channel_id: (slackChannel as any).id,
-              sent_at: new Date().toISOString(),
-              status: 'pending',
-              payload: {
-                text: `*${String((alert as any).severity).toUpperCase()}* - ${(alert as any).title}\n${(alert as any).explanation}`,
-              },
-            } as DeepPartial<Notification>),
-          );
-
-          if ((user as any).type === 'MERCHANT') {
-            notifRows.push(
-              notifRepo.create({
-                alert_id: (alert as any).id,
-                user_id: (user as any).id,
-                channel_id: (webhookChannel as any).id,
-                sent_at: new Date().toISOString(),
-                status: 'pending',
-                payload: {
-                  merchant_id: (alert as any).merchant_id,
-                  event: 'ALERT_CREATED',
-                  severity: (alert as any).severity,
-                  title: (alert as any).title,
-                  explanation: (alert as any).explanation,
-                },
-              } as DeepPartial<Notification>),
-            );
-          }
-        }
-      }
-
-      if (notifRows.length) await notifRepo.save(notifRows);
 
       await runner.commitTransaction();
 
@@ -426,9 +422,13 @@ export class SeedService {
           users: yunoUsers.length + merchantUsers.length,
           notification_channels: channels.length,
           transactions: insertedTxs.length,
-          // metrics: (no exact count returned here, but you can count if quieres)
           alerts: createdAlerts.length,
-          notifications: notifRows.length,
+        },
+        health_graph_scenarios: {
+          ok_routes: 4,
+          warning_routes: 1,
+          critical_routes: 3,
+          description: 'Datos generados para demostrar health-graph con escenarios específicos',
         },
         endpoint: 'POST /seed',
       };
