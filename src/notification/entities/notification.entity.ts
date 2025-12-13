@@ -1,6 +1,14 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { Alert } from '../../alert/entities/alert.entity';
 import { NotificationChannel } from '../../notification-channel/entities/notification-channel.entity';
+import { User } from '../../user/entities/user.entity';
 
 @Entity('notificaciones')
 export class Notification {
@@ -10,7 +18,9 @@ export class Notification {
   @Column({ type: 'uuid' })
   alerta_id: string;
 
-  @ManyToOne(() => Alert, alert => alert.notifications, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Alert, (alert) => alert.notifications, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'alerta_id' })
   alert: Alert;
 
@@ -20,7 +30,9 @@ export class Notification {
   @Column({ type: 'uuid' })
   canal_id: string;
 
-  @ManyToOne(() => NotificationChannel, channel => channel.notifications, { onDelete: 'CASCADE' })
+  @ManyToOne(() => NotificationChannel, (channel) => channel.notifications, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'canal_id' })
   channel: NotificationChannel;
 
@@ -32,4 +44,8 @@ export class Notification {
 
   @Column({ type: 'jsonb', nullable: true })
   payload: any;
+
+  @ManyToOne(() => User, (user) => user.notifications, { nullable: false })
+  @JoinColumn({ name: 'usuario_id' })
+  user: User;
 }

@@ -1,6 +1,15 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+} from 'typeorm';
 import { Metric } from '../../metric/entities/metric.entity';
 import { Notification } from '../../notification/entities/notification.entity';
+import { Merchant } from '../../merchant/entities/merchant.entity';
 
 @Entity('alertas')
 export class Alert {
@@ -10,7 +19,7 @@ export class Alert {
   @Column({ type: 'uuid' })
   metrica_id: string;
 
-  @ManyToOne(() => Metric, metric => metric.alerts, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Metric, (metric) => metric.alerts, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'metrica_id' })
   metric: Metric;
 
@@ -32,6 +41,10 @@ export class Alert {
   @Column({ type: 'uuid', nullable: true })
   merchant_id: string;
 
-  @OneToMany(() => Notification, notification => notification.alert)
+  @OneToMany(() => Notification, (notification) => notification.alert)
   notifications: Notification[];
+
+  @ManyToOne(() => Merchant, (merchant) => merchant.alerts, { nullable: true })
+  @JoinColumn({ name: 'merchant_id' })
+  merchant?: Merchant;
 }

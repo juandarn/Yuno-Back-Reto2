@@ -13,12 +13,12 @@ export class Merchant {
   name: string;
 
   // Relations
-  @OneToMany(() => User, user => user.merchant)
+  @OneToMany(() => User, (user) => user.merchant)
   users: User[];
 
-  @OneToMany(() => Transaction, transaction => transaction.merchant)
+  @OneToMany(() => Transaction, (transaction) => transaction.merchant)
   transactions: Transaction[];
 
-  @OneToMany(() => Alert, alert => alert.merchant)
+  @OneToMany(() => Alert, (alert) => alert.merchant)
   alerts: Alert[];
 }
