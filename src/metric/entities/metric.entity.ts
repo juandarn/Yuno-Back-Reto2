@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  OneToMany,
+} from 'typeorm';
 import { Alert } from '../../alert/entities/alert.entity';
 
 @Entity('metricas')
@@ -42,6 +48,12 @@ export class Metric {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   p95_latency: number;
 
-  @OneToMany(() => Alert, alert => alert.metric)
+  @OneToMany(() => Alert, (alert) => alert.metric)
   alerts: Alert[];
+
+  @Column({ type: 'timestamp' })
+  start_window: Date;
+
+  @Column({ type: 'timestamp' })
+  end_windows: Date;
 }
