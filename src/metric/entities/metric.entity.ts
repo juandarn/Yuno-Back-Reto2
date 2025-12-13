@@ -56,4 +56,7 @@ export class Metric {
 
   @Column({ type: 'timestamp' })
   end_window: Date;
+
+  @Column({ type: 'text' })
+  type: string;
 }
