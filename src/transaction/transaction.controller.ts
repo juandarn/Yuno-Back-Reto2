@@ -1,4 +1,3 @@
-// src/transactions/transactions.controller.ts
 import {
   Controller,
   Get,
@@ -10,6 +9,8 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -55,6 +56,41 @@ export class TransactionController {
     return this.transactionService.findByStatus(status);
   }
 
+  // NEW ENDPOINTS: Get transactions by last X days
+  @Get('merchant/:merchantId/last-days')
+  findByMerchantLastDays(
+    @Param('merchantId') merchantId: string,
+    @Query('days', ParseIntPipe) days: number,
+  ) {
+    if (days <= 0) {
+      throw new BadRequestException('Days must be a positive number');
+    }
+    return this.transactionService.findByMerchantLastDays(merchantId, days);
+  }
+
+  @Get('provider/:providerId/last-days')
+  findByProviderLastDays(
+    @Param('providerId') providerId: string,
+    @Query('days', ParseIntPipe) days: number,
+  ) {
+    if (days <= 0) {
+      throw new BadRequestException('Days must be a positive number');
+    }
+    return this.transactionService.findByProviderLastDays(providerId, days);
+  }
+
+  @Get('payment-method/:methodId/last-days')
+  findByPaymentMethodLastDays(
+    @Param('methodId') methodId: string,
+    @Query('days', ParseIntPipe) days: number,
+  ) {
+    if (days <= 0) {
+      throw new BadRequestException('Days must be a positive number');
+    }
+    return this.transactionService.findByPaymentMethodLastDays(methodId, days);
+  }
+
+  // Stats endpoints
   @Get('stats/merchant/:merchantId')
   getStatsByMerchant(
     @Param('merchantId') merchantId: string,
@@ -81,13 +117,29 @@ export class TransactionController {
     );
   }
 
+  @Get('stats/payment-method/:methodId')
+  getStatsByPaymentMethod(
+    @Param('methodId') methodId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.transactionService.getStatsByPaymentMethod(
+      methodId,
+      startDate ? new Date(startDate) : undefined,
+      endDate ? new Date(endDate) : undefined,
+    );
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.transactionService.findOne(id);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateTransactionDto: UpdateTransactionDto) {
+  update(
+    @Param('id') id: string,
+    @Body() updateTransactionDto: UpdateTransactionDto,
+  ) {
     return this.transactionService.update(id, updateTransactionDto);
   }
 
