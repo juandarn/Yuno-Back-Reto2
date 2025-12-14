@@ -27,16 +27,16 @@ export class Alert {
   fecha: Date;
 
   @Column({ type: 'varchar', length: 50 })
-  severidad: string;
+  severity: string;
 
   @Column({ type: 'varchar', length: 50, default: 'open' })
   estado: string;
 
   @Column({ type: 'varchar', length: 255 })
-  titulo: string;
+  title: string;
 
   @Column({ type: 'text', nullable: true })
-  explicacion: string;
+  explanation: string;
 
   @Column({ type: 'uuid', nullable: true })
   merchant_id: string;

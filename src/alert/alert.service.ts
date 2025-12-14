@@ -20,12 +20,12 @@ export class AlertService {
   async create(createDto: CreateAlertDto): Promise<Alert> {
     const alert = this.alertRepository.create({
       ...createDto,
-      estado: createDto.estado || AlertStatus.OPEN,
+      estado: createDto.state || AlertStatus.OPEN,
     });
     const savedAlert = await this.alertRepository.save(alert);
 
     // Enviar notificaciones automáticamente para alertas críticas
-    if (createDto.severidad === 'critical') {
+    if (createDto.severity === 'critical') {
       await this.sendAlertNotifications(savedAlert);
     }
 
@@ -67,11 +67,11 @@ export class AlertService {
   }
 
   async acknowledge(id: string): Promise<Alert> {
-    return await this.update(id, { estado: AlertStatus.ACK });
+    return await this.update(id, { state: AlertStatus.ACK });
   }
 
   async resolve(id: string): Promise<Alert> {
-    return await this.update(id, { estado: AlertStatus.RESOLVED });
+    return await this.update(id, { state: AlertStatus.RESOLVED });
   }
 
   async remove(id: string): Promise<void> {
@@ -103,9 +103,9 @@ export class AlertService {
           usuario_id: 'system', // O usar el merchant_id si está disponible
           canal_id: channel.id,
           payload: JSON.stringify({
-            severity: alert.severidad,
-            title: alert.titulo,
-            explanation: alert.explicacion,
+            severity: alert.severity,
+            title: alert.title,
+            explanation: alert.explanation,
           }),
         });
 
@@ -115,12 +115,12 @@ export class AlertService {
           channelType,
           {
             to: recipient,
-            subject: `🚨 ${alert.severidad.toUpperCase()}: ${alert.titulo}`,
-            body: alert.explicacion || 'No hay detalles adicionales disponibles.',
+            subject: `🚨 ${alert.severity.toUpperCase()}: ${alert.title}`,
+            body: alert.explanation || 'No hay detalles adicionales disponibles.',
             metadata: {
               alertId: alert.id,
               metricId: alert.metric_id,
-              severity: alert.severidad,
+              severity: alert.severity,
               merchantId: alert.merchant_id,
               timestamp: alert.fecha,
             },

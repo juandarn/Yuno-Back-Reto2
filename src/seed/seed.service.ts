@@ -396,13 +396,14 @@ export class SeedService {
             const metricForAlert =
               (savedMetrics as any[]).find(mt => (mt as any).type === 'error_rate') ?? (savedMetrics as any[])[0];
 
+            // ✅ CORRECCIÓN: Usar nombres en INGLÉS
             const alertEntity = alertRepo.create({
-              metric_id: (metricForAlert as any).id,
-              fecha: end,
-              severidad: severity,
-              estado: 'open',
-              titulo: title,
-              explicacion: explanation,
+              metric_id: (metricForAlert as any).id,  // ✅ metric_id (inglés)
+              date: end,                              // ✅ date (inglés) 
+              severity: severity,                     // ✅ severity (inglés)
+              state: 'open',                          // ✅ state (inglés)
+              title: title,                           // ✅ title (inglés)
+              explanation: explanation,               // ✅ explanation (inglés)
               merchant_id: m.id,
             } as any);
 

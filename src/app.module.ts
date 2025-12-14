@@ -25,6 +25,7 @@ import { AlertModule } from './alert/alert.module';
 import { NotificationModule } from './notification/notification.module';
 import { NotificationChannelModule } from './notification-channel/notification-channel.module';
 import { MetricModule } from './metric/metric.module';
+import { FailurePredictionModule } from './failure-prediction/failure-prediction.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { MetricModule } from './metric/metric.module';
     NotificationModule,
     NotificationChannelModule,
     MetricModule,
+    FailurePredictionModule
   ],
 })
 export class AppModule {}

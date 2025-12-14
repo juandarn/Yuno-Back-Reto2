@@ -14,21 +14,22 @@ export enum AlertStatus {
 
 export class CreateAlertDto {
   @IsString()
-  metrica_id: string;
+  @IsOptional()  // ← AGREGAR ESTA LÍNEA
+  metric_id?: string;  // ← AGREGAR ? para hacerlo opcional
 
   @IsEnum(AlertSeverity)
-  severidad: AlertSeverity;
+  severity: AlertSeverity;
 
   @IsEnum(AlertStatus)
   @IsOptional()
-  estado?: AlertStatus;
+  state?: AlertStatus;
 
   @IsString()
-  titulo: string;
+  title: string;
 
   @IsString()
   @IsOptional()
-  explicacion?: string;
+  explanation?: string;
 
   @IsString()
   @IsOptional()
@@ -38,17 +39,17 @@ export class CreateAlertDto {
 export class UpdateAlertDto {
   @IsEnum(AlertSeverity)
   @IsOptional()
-  severidad?: AlertSeverity;
+  severity?: AlertSeverity;
 
   @IsEnum(AlertStatus)
   @IsOptional()
-  estado?: AlertStatus;
+  state?: AlertStatus;
 
   @IsString()
   @IsOptional()
-  titulo?: string;
+  title?: string;
 
   @IsString()
   @IsOptional()
-  explicacion?: string;
+  explanation?: string;
 }

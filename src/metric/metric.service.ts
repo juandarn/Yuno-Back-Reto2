@@ -183,10 +183,10 @@ export class MetricService {
     // Crear alertas
     for (const alertData of alerts) {
       await this.alertsService.create({
-        metrica_id: metric.id,
-        severidad: alertData.severity,
-        titulo: alertData.title,
-        explicacion: alertData.explanation,
+        metric_id: metric.id,
+        severity: alertData.severity,
+        title: alertData.title,
+        explanation: alertData.explanation,
         merchant_id: metric.merchant_id,
       });
     }
