@@ -12,7 +12,7 @@ export class DismissRiskDto {
 export class RiskNotificationController {
   constructor(
     private readonly riskNotificationService: RiskNotificationService,
-  ) {}
+  ) { }
 
   /**
    * Obtener todas las notificaciones de riesgo activas
@@ -59,10 +59,13 @@ export class RiskNotificationController {
    * POST /risk-notifications/:id/propagate
    */
   @Post(':id/propagate')
-  async propagate(@Param('id') id: string): Promise<{ success: boolean }> {
-    await this.riskNotificationService.propagateRiskNotification(id);
-    return { success: true };
+  async propagate(
+    @Param('id') id: string,
+  ): Promise<{ success: boolean; entity_name?: string }> {
+    const result = await this.riskNotificationService.propagateRiskNotification(id);
+    return { success: true, entity_name: result.entity_name };
   }
+
 
   /**
    * Marcar como resuelta
