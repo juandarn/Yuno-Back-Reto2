@@ -315,7 +315,7 @@ export class TransactionService {
     };
   }
   private buildApprovedAggQuery(params: {
-    merchant_id: string;
+    merchant_id?: string;
     provider_id?: number;
     method_id?: number;
     country_code?: string;
@@ -327,13 +327,16 @@ export class TransactionService {
       .select(`date_trunc('day', tx.date)`, 'day')
       .addSelect(`COUNT(*)`, 'approved')
       .where('tx.status = :status', { status: TxStatus.APPROVED })
-      .andWhere('tx.merchant_id = :merchant_id', {
-        merchant_id: params.merchant_id,
-      })
       .andWhere('tx.date >= :start AND tx.date < :end', {
         start: params.start,
         end: params.end,
       });
+
+    if (params.merchant_id) {
+      qb.andWhere('tx.merchant_id = :merchant_id', {
+        merchant_id: params.merchant_id,
+      });
+    }
 
     if (params.provider_id !== undefined) {
       qb.andWhere('tx.provider_id = :provider_id', {
@@ -355,7 +358,7 @@ export class TransactionService {
   }
 
   private async getApprovedDailySeries(params: {
-    merchant_id: string;
+    merchant_id?: string;
     provider_id?: number;
     method_id?: number;
     country_code?: string;
@@ -385,7 +388,7 @@ export class TransactionService {
   }
   
   async getApprovedExpectedVsActual(params: {
-    merchant_id: string;
+    merchant_id?: string;
     provider_id?: number;
     method_id?: number;
     country_code?: string;

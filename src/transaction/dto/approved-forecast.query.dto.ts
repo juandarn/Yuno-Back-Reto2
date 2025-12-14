@@ -4,7 +4,8 @@ import { Type } from 'class-transformer';
 
 export class ApprovedForecastQueryDto {
   @IsUUID()
-  merchant_id: string;
+  @IsOptional()
+  merchant_id?: string;
 
   @IsOptional()
   @Type(() => Number)
