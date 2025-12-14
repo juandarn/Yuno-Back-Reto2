@@ -292,4 +292,142 @@ export class TransactionService {
       avgLatencyMs: Math.round(avgLatency),
     };
   }
+  private buildApprovedAggQuery(params: {
+    merchant_id: string;
+    provider_id?: number;
+    method_id?: number;
+    country_code?: string;
+    start: Date;
+    end: Date;
+  }) {
+    const qb = this.transactionsRepository
+      .createQueryBuilder('tx')
+      .select(`date_trunc('day', tx.date)`, 'day')
+      .addSelect(`COUNT(*)`, 'approved')
+      .where('tx.status = :status', { status: TxStatus.APPROVED })
+      .andWhere('tx.merchant_id = :merchant_id', {
+        merchant_id: params.merchant_id,
+      })
+      .andWhere('tx.date >= :start AND tx.date < :end', {
+        start: params.start,
+        end: params.end,
+      });
+
+    if (params.provider_id !== undefined) {
+      qb.andWhere('tx.provider_id = :provider_id', {
+        provider_id: params.provider_id,
+      });
+    }
+
+    if (params.method_id !== undefined) {
+      qb.andWhere('tx.method_id = :method_id', { method_id: params.method_id });
+    }
+
+    if (params.country_code) {
+      qb.andWhere('tx.country_code = :country_code', {
+        country_code: params.country_code,
+      });
+    }
+
+    return qb.groupBy('day').orderBy('day', 'ASC');
+  }
+
+  private async getApprovedDailySeries(params: {
+    merchant_id: string;
+    provider_id?: number;
+    method_id?: number;
+    country_code?: string;
+    start: Date;
+    end: Date;
+  }): Promise<Map<string, number>> {
+    const rows = await this.buildApprovedAggQuery(params).getRawMany();
+
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const day = new Date(r.day).toISOString().slice(0, 10); // YYYY-MM-DD
+      map.set(day, Number(r.approved));
+    }
+    return map;
+  }
+
+  private startOfDayUTC(d: Date) {
+    const x = new Date(d);
+    x.setUTCHours(0, 0, 0, 0);
+    return x;
+  }
+
+  private addDaysUTC(d: Date, days: number) {
+    const x = new Date(d);
+    x.setUTCDate(x.getUTCDate() + days);
+    return x;
+  }
+  async getApprovedExpectedVsActual(params: {
+    merchant_id: string;
+    provider_id?: number;
+    method_id?: number;
+    country_code?: string;
+  }): Promise<{
+    filters: any;
+    range: { from: string; to: string };
+    weeks_history: number;
+    series: Array<{ date: string; actual: number; expected: number }>;
+  }> {
+    const weeksHistory = 1;
+
+    const todayStart = this.startOfDayUTC(new Date());
+    const from = this.addDaysUTC(todayStart, -6);
+    const to = this.addDaysUTC(todayStart, 1);
+
+    const prevFrom = this.addDaysUTC(from, -7);
+    const prevTo = this.addDaysUTC(to, -7);
+
+    const actualMap = await this.getApprovedDailySeries({
+      merchant_id: params.merchant_id,
+      provider_id: params.provider_id,
+      method_id: params.method_id,
+      country_code: params.country_code,
+      start: from,
+      end: to,
+    });
+
+    const prevMap = await this.getApprovedDailySeries({
+      merchant_id: params.merchant_id,
+      provider_id: params.provider_id,
+      method_id: params.method_id,
+      country_code: params.country_code,
+      start: prevFrom,
+      end: prevTo,
+    });
+
+    const series: Array<{ date: string; actual: number; expected: number }> =
+      [];
+    const cursor = new Date(from);
+
+    while (cursor < to) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const prevDateStr = this.addDaysUTC(cursor, -7)
+        .toISOString()
+        .slice(0, 10);
+
+      series.push({
+        date: dateStr,
+        actual: actualMap.get(dateStr) ?? 0,
+        expected: prevMap.get(prevDateStr) ?? 0,
+      });
+
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+
+    return {
+      filters: {
+        merchant_id: params.merchant_id,
+        provider_id: params.provider_id,
+        method_id: params.method_id,
+        country_code: params.country_code,
+      },
+      range: { from: from.toISOString(), to: to.toISOString() },
+      weeks_history: weeksHistory,
+      series,
+    };
+  }
 }

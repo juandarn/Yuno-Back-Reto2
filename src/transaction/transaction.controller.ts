@@ -16,6 +16,7 @@ import { TransactionService } from './transaction.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { TxStatus } from '../common/enums';
+import { ApprovedForecastQueryDto } from './dto/approved-forecast.query.dto';
 
 @Controller('transactions')
 export class TransactionController {
@@ -39,6 +40,16 @@ export class TransactionController {
       );
     }
     return this.transactionService.findAll();
+  }
+
+  @Get('approved-forecast')
+  approvedForecast(@Query() q: ApprovedForecastQueryDto) {
+    return this.transactionService.getApprovedExpectedVsActual({
+      merchant_id: q.merchant_id,
+      provider_id: q.provider_id,
+      method_id: q.method_id,
+      country_code: q.country_code,
+    });
   }
 
   @Get('merchant/:merchantId')
