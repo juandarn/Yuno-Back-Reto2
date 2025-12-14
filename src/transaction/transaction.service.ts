@@ -9,9 +9,6 @@ import { Merchant } from '../merchant/entities/merchant.entity';
 import { Provider } from '../provider/entities/provider.entity';
 import { PaymentMethod } from '../payment-method/entities/payment-method.entity';
 import { Country } from '../country/entities/country.entity';
-import { FailurePredictionService } from '../failure-prediction/failure-prediction.service';
-import { FailureProbability } from '../failure-prediction/dto/failure-prediction.dto';
-import { TxErrorType } from '../common/enums';
 import type {
   OptionsTreeResponse,
   OptionsRow,
@@ -32,7 +29,6 @@ export class TransactionService {
     @InjectRepository(PaymentMethod)
     private methodRepo: Repository<PaymentMethod>,
     @InjectRepository(Country) private countryRepo: Repository<Country>,
-    private readonly failurePredictionService: FailurePredictionService,
   ) {}
 
   async create(
@@ -397,12 +393,6 @@ export class TransactionService {
     range: { from: string; to: string };
     weeks_history: number;
     series: Array<{ date: string; actual: number; expected: number }>;
-    risk_analysis?: {
-      entity_name: string;
-      risk_level: string;
-      probability: number;
-      recommended_actions: string[];
-    } | null;
   }> {
     const weeksHistory = 1;
 
@@ -441,28 +431,6 @@ export class TransactionService {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
-    const failurePrediction = await this.failurePredictionService.getPredictions({
-      merchant_id: params.merchant_id,
-      provider_id: params.provider_id?.toString(),
-      method_id: params.method_id?.toString(),
-      country_code: params.country_code,
-      time_window_minutes: 60,
-      include_low_risk: true,
-    });
-
-    // Encontrar la predicción más relevante (mayor riesgo)
-    const fullRiskAnalysis = failurePrediction.predictions.length > 0 
-      ? failurePrediction.predictions[0] 
-      : null;
-
-    // Simplificar risk_analysis para enviar solo lo esencial
-    const riskAnalysis = fullRiskAnalysis ? {
-      entity_name: fullRiskAnalysis.entity_name,
-      risk_level: fullRiskAnalysis.risk_level,
-      probability: fullRiskAnalysis.probability,
-      recommended_actions: fullRiskAnalysis.recommended_actions,
-    } : null;
-
     return {
       filters: {
         merchant_id: params.merchant_id,
@@ -473,7 +441,6 @@ export class TransactionService {
       range: { from: from.toISOString(), to: to.toISOString() },
       weeks_history: weeksHistory,
       series,
-      risk_analysis: riskAnalysis,
     };
   }
 
