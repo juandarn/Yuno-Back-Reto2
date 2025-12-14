@@ -16,12 +16,12 @@ export class Alert {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
-  metric_id: string;
+  @Column({ type: 'uuid', nullable: true })  // ✅ CAMBIO: Ahora es nullable
+  metric_id?: string;  // ✅ CAMBIO: Ahora es opcional
 
-  @ManyToOne(() => Metric, (metric) => metric.alerts, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Metric, (metric) => metric.alerts, { onDelete: 'CASCADE', nullable: true })  // ✅ CAMBIO: nullable
   @JoinColumn({ name: 'metric_id' })
-  metric: Metric;
+  metric?: Metric;  // ✅ CAMBIO: Ahora es opcional
 
   @CreateDateColumn({ type: 'timestamp' })
   fecha: Date;

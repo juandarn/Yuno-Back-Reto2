@@ -1,0 +1,646 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, LessThan, IsNull } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { RiskNotification } from '../risk-notification/entities/risk-notification.entity';
+import { FailurePredictionService } from '../failure-prediction/failure-prediction.service';
+import { NotificationService } from '../notification/notification.service';
+import { AlertService } from '../alert/alert.service';
+import { User } from '../user/entities/user.entity';
+import { NotificationChannel } from '../notification-channel/entities/notification-channel.entity';
+import { AlertSeverity } from '../alert/dto/create-alert.dto';
+import { FailureProbability } from '../failure-prediction/dto/failure-prediction.dto';
+
+@Injectable()
+export class RiskNotificationService {
+  private readonly logger = new Logger(RiskNotificationService.name);
+
+  // Configuración
+  private readonly GUARD_NOTIFICATION_INTERVAL_MINUTES = 15; // Tiempo entre intentos al guardia
+  private readonly MAX_GUARD_ATTEMPTS = 3; // Máximo de intentos antes de escalar
+  private readonly RISK_CHECK_INTERVAL_MINUTES = 5; // Cada cuánto revisar riesgos
+
+  constructor(
+    @InjectRepository(RiskNotification)
+    private riskNotificationRepository: Repository<RiskNotification>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+    @InjectRepository(NotificationChannel)
+    private channelRepository: Repository<NotificationChannel>,
+    private failurePredictionService: FailurePredictionService,
+    private notificationService: NotificationService,
+    private alertService: AlertService,
+  ) {}
+
+  /**
+   * Cron job principal - Ejecuta cada 5 minutos
+   * Revisa predicciones y gestiona notificaciones
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async checkAndNotifyRisks() {
+    this.logger.log('🔍 Iniciando revisión periódica de riesgos...');
+
+    try {
+      // 1. Obtener predicciones actuales
+      const predictions = await this.failurePredictionService.getPredictions({
+        entity_type: 'merchant',
+        time_window_minutes: 60,
+        include_low_risk: false,
+      });
+
+      const providerPredictions = await this.failurePredictionService.getPredictions({
+        entity_type: 'provider',
+        time_window_minutes: 60,
+        include_low_risk: false,
+      });
+
+      const allPredictions = [
+        ...predictions.predictions,
+        ...providerPredictions.predictions,
+      ];
+
+      // Filtrar solo MEDIUM, HIGH, CRITICAL
+      const riskyEntities = allPredictions.filter(
+        (p) => p.risk_level === 'medium' || p.risk_level === 'high' || p.risk_level === 'critical',
+      );
+
+      this.logger.log(`📊 Encontradas ${riskyEntities.length} entidades en riesgo`);
+
+      // 2. Procesar cada entidad en riesgo
+      for (const entity of riskyEntities) {
+        await this.processRiskyEntity(entity);
+      }
+
+      // 3. Revisar notificaciones pendientes del guardia
+      await this.checkPendingGuardNotifications();
+
+      // 4. Limpiar notificaciones resueltas antiguas (opcional)
+      await this.cleanupOldNotifications();
+
+      this.logger.log('✅ Revisión periódica completada');
+    } catch (error) {
+      this.logger.error('❌ Error en revisión periódica:', error);
+    }
+  }
+
+  /**
+   * Procesa una entidad en riesgo
+   */
+  private async processRiskyEntity(entity: FailureProbability) {
+    // Verificar si ya existe una notificación activa para esta entidad
+    const existingNotification = await this.riskNotificationRepository.findOne({
+      where: {
+        entity_type: entity.entity_type,
+        entity_id: entity.entity_id,
+        status: 'guard_notified' as any,
+        resolved: false,
+      },
+    });
+
+    if (existingNotification) {
+      // Ya existe notificación activa - actualizar si el riesgo cambió
+      if (existingNotification.risk_level !== entity.risk_level) {
+        this.logger.log(
+          `⚠️ Riesgo cambió para ${entity.entity_name}: ${existingNotification.risk_level} → ${entity.risk_level}`,
+        );
+        existingNotification.risk_level = entity.risk_level;
+        existingNotification.probability = entity.probability;
+        await this.riskNotificationRepository.save(existingNotification);
+      }
+      return; // No re-notificar
+    }
+
+    // Verificar si fue descartada recientemente (últimas 24h)
+    const recentlyDismissed = await this.riskNotificationRepository.findOne({
+      where: {
+        entity_type: entity.entity_type,
+        entity_id: entity.entity_id,
+        dismissed_by_guard: true,
+        dismissed_at: LessThan(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+      },
+    });
+
+    if (recentlyDismissed) {
+      this.logger.log(`🚫 ${entity.entity_name} fue descartada recientemente - no notificar`);
+      return;
+    }
+
+    // Nueva entidad en riesgo - notificar al guardia
+    await this.notifyGuard(entity);
+  }
+
+  /**
+   * Notifica al guardia de turno sobre una entidad en riesgo
+   */
+  private async notifyGuard(entity: FailureProbability) {
+    this.logger.log(`🚨 Nueva entidad en riesgo detectada: ${entity.entity_name} (${entity.risk_level})`);
+
+    // Obtener guardia de turno
+    const guardUser = await this.getOnCallGuard();
+    if (!guardUser) {
+      this.logger.error('❌ No hay guardia de turno disponible - escalando directamente');
+      await this.escalateToAll(entity, null);
+      return;
+    }
+
+    // Crear alerta
+    const alert = await this.alertService.create({
+      severity: this.mapRiskToSeverity(entity.risk_level),
+      title: `⚠️ Riesgo ${entity.risk_level.toUpperCase()} detectado: ${entity.entity_name}`,
+      explanation: this.buildAlertExplanation(entity),
+      merchant_id: entity.entity_type === 'merchant' ? entity.entity_id : undefined,
+    });
+
+    // Registrar notificación de riesgo
+    const riskNotification = this.riskNotificationRepository.create({
+      entity_type: entity.entity_type,
+      entity_id: entity.entity_id,
+      entity_name: entity.entity_name,
+      risk_level: entity.risk_level,
+      probability: entity.probability,
+      status: 'guard_notified',
+      guard_attempts: 1,
+      last_guard_notification: new Date(),
+      guard_user_id: guardUser.id,
+      metadata: {
+        signals: entity.signals,
+        baseline_comparison: entity.baseline_comparison,
+        trend: entity.trend,
+        recommended_actions: entity.recommended_actions,
+      },
+    });
+
+    await this.riskNotificationRepository.save(riskNotification);
+
+    // Enviar notificación al guardia
+    await this.sendGuardNotification(guardUser, alert, riskNotification);
+
+    this.logger.log(`✉️ Guardia notificado: ${guardUser.name} (${guardUser.email})`);
+  }
+
+  /**
+   * Envía notificación al guardia por email
+   */
+  private async sendGuardNotification(
+    guardUser: User,
+    alert: any,
+    riskNotification: RiskNotification,
+  ) {
+    const emailChannel = await this.channelRepository.findOne({
+      where: { name: 'gmail', activo: true },
+    });
+
+    if (!emailChannel) {
+      this.logger.error('Canal de email no disponible');
+      return;
+    }
+
+    const notification = await this.notificationService.create({
+      alerta_id: alert.id,
+      usuario_id: guardUser.id,
+      canal_id: emailChannel.id,
+      payload: JSON.stringify({
+        to: guardUser.email,
+        subject: `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`,
+        body: this.buildGuardEmailBody(riskNotification, guardUser),
+      }),
+    });
+
+    await this.notificationService.sendNotification(
+      notification.id,
+      'gmail',
+      {
+        to: guardUser.email,
+        subject: `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`,
+        body: this.buildGuardEmailBody(riskNotification, guardUser),
+      },
+    );
+  }
+
+  /**
+   * Revisa notificaciones pendientes del guardia
+   * Si han pasado 15 minutos sin respuesta, envía otro intento (máximo 3)
+   */
+  private async checkPendingGuardNotifications() {
+    const pendingNotifications = await this.riskNotificationRepository.find({
+      where: {
+        status: 'guard_notified' as any,
+        escalated_to_all: false,
+        dismissed_by_guard: false,
+        resolved: false,
+      },
+    });
+
+    for (const notification of pendingNotifications) {
+      const minutesSinceLastNotification =
+        (Date.now() - new Date(notification.last_guard_notification).getTime()) / (1000 * 60);
+
+      if (minutesSinceLastNotification >= this.GUARD_NOTIFICATION_INTERVAL_MINUTES) {
+        if (notification.guard_attempts < this.MAX_GUARD_ATTEMPTS) {
+          // Enviar otro intento
+          await this.retryGuardNotification(notification);
+        } else {
+          // Máximo de intentos alcanzado - escalar a todos
+          this.logger.warn(
+            `⏰ Guardia no respondió después de ${this.MAX_GUARD_ATTEMPTS} intentos - escalando ${notification.entity_name}`,
+          );
+          await this.escalateToAll(null, notification);
+        }
+      }
+    }
+  }
+
+  /**
+   * Reintenta notificación al guardia
+   */
+  private async retryGuardNotification(notification: RiskNotification) {
+    notification.guard_attempts += 1;
+    notification.last_guard_notification = new Date();
+    await this.riskNotificationRepository.save(notification);
+
+    const guardUser = await this.userRepository.findOne({
+      where: { id: notification.guard_user_id },
+    });
+
+    if (guardUser) {
+      this.logger.log(
+        `🔔 Reintento ${notification.guard_attempts}/${this.MAX_GUARD_ATTEMPTS} para ${notification.entity_name}`,
+      );
+
+      // Crear nueva alerta
+      const alert = await this.alertService.create({
+        severity: this.mapRiskToSeverity(notification.risk_level),
+        title: `⚠️ [RECORDATORIO ${notification.guard_attempts}] Riesgo ${notification.risk_level.toUpperCase()}: ${notification.entity_name}`,
+        explanation: `Este es el intento ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}.\n\nSi no se recibe respuesta, se escalará automáticamente a todo el equipo.`,
+      });
+
+      await this.sendGuardNotification(guardUser, alert, notification);
+    }
+  }
+
+  /**
+   * Escala la notificación a todos los empleados de Yuno
+   */
+  private async escalateToAll(
+    entity: FailureProbability | null,
+    notification: RiskNotification | null,
+  ) {
+    let riskNotification = notification;
+
+    if (!riskNotification && entity) {
+      // Crear nueva si es escalación directa
+      riskNotification = this.riskNotificationRepository.create({
+        entity_type: entity.entity_type,
+        entity_id: entity.entity_id,
+        entity_name: entity.entity_name,
+        risk_level: entity.risk_level,
+        probability: entity.probability,
+        status: 'escalated',
+        guard_attempts: 0,
+        escalated_to_all: true,
+        escalated_at: new Date(),
+      });
+      await this.riskNotificationRepository.save(riskNotification);
+    } else if (riskNotification) {
+      // Actualizar existente
+      riskNotification.status = 'escalated' as any;
+      riskNotification.escalated_to_all = true;
+      riskNotification.escalated_at = new Date();
+      await this.riskNotificationRepository.save(riskNotification);
+    }
+
+    // Obtener todos los usuarios de Yuno
+    const yunoUsers = await this.userRepository.find({
+      where: { type: 'YUNO', active: true },
+    });
+
+    this.logger.log(`📢 Escalando ${riskNotification!.entity_name} a ${yunoUsers.length} empleados de Yuno`);
+
+    // Crear alerta general
+    const alert = await this.alertService.create({
+      severity: AlertSeverity.CRITICAL,
+      title: `🚨 [ESCALADO] Riesgo CRÍTICO: ${riskNotification!.entity_name}`,
+      explanation: `Esta alerta fue escalada automáticamente después de ${riskNotification!.guard_attempts} intentos sin respuesta del guardia.\n\nSe requiere atención inmediata de todo el equipo.`,
+    });
+
+    const emailChannel = await this.channelRepository.findOne({
+      where: { name: 'gmail', activo: true },
+    });
+
+    if (!emailChannel) {
+      this.logger.error('Canal de email no disponible');
+      return;
+    }
+
+    // Enviar a todos
+    for (const user of yunoUsers) {
+      const notification = await this.notificationService.create({
+        alerta_id: alert.id,
+        usuario_id: user.id,
+        canal_id: emailChannel.id,
+        payload: JSON.stringify({
+          to: user.email,
+          subject: `🚨 [CRÍTICO] Riesgo detectado: ${riskNotification!.entity_name}`,
+          body: this.buildEscalatedEmailBody(riskNotification!),
+        }),
+      });
+
+      await this.notificationService.sendNotification(
+        notification.id,
+        'gmail',
+        {
+          to: user.email,
+          subject: `🚨 [CRÍTICO] Riesgo detectado: ${riskNotification!.entity_name}`,
+          body: this.buildEscalatedEmailBody(riskNotification!),
+        },
+      );
+    }
+
+    this.logger.log(`✅ Notificación escalada enviada a ${yunoUsers.length} empleados`);
+  }
+
+  /**
+   * Descarta una notificación de riesgo (llamado desde el frontend por el guardia)
+   */
+  async dismissRiskNotification(
+    notificationId: string,
+    userId: string,
+    reason: string,
+  ): Promise<RiskNotification> {
+    const notification = await this.riskNotificationRepository.findOne({
+      where: { id: notificationId },
+    });
+
+    if (!notification) {
+      throw new Error('Notificación no encontrada');
+    }
+
+    notification.dismissed_by_guard = true;
+    notification.dismissed_by_user_id = userId;
+    notification.dismissed_at = new Date();
+    notification.dismissal_reason = reason;
+    notification.status = 'dismissed' as any;
+
+    await this.riskNotificationRepository.save(notification);
+
+    this.logger.log(`✅ Notificación descartada por guardia: ${notification.entity_name}`);
+
+    return notification;
+  }
+
+  /**
+   * Propaga/escala manualmente una notificación (llamado desde el frontend por el guardia)
+   */
+  async propagateRiskNotification(notificationId: string): Promise<void> {
+    const notification = await this.riskNotificationRepository.findOne({
+      where: { id: notificationId },
+    });
+
+    if (!notification) {
+      throw new Error('Notificación no encontrada');
+    }
+
+    this.logger.log(`📢 Guardia decidió propagar manualmente: ${notification.entity_name}`);
+
+    await this.escalateToAll(null, notification);
+  }
+
+  /**
+   * Marca una notificación como resuelta
+   */
+  async markAsResolved(notificationId: string): Promise<RiskNotification> {
+    const notification = await this.riskNotificationRepository.findOne({
+      where: { id: notificationId },
+    });
+
+    if (!notification) {
+      throw new Error('Notificación no encontrada');
+    }
+
+    notification.resolved = true;
+    notification.resolved_at = new Date();
+    notification.status = 'resolved' as any;
+
+    await this.riskNotificationRepository.save(notification);
+
+    this.logger.log(`✅ Notificación marcada como resuelta: ${notification.entity_name}`);
+
+    return notification;
+  }
+
+  /**
+   * Limpia notificaciones antiguas resueltas (más de 7 días)
+   */
+  private async cleanupOldNotifications() {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const result = await this.riskNotificationRepository
+      .createQueryBuilder()
+      .delete()
+      .where('resolved = true')
+      .andWhere('resolved_at < :sevenDaysAgo', { sevenDaysAgo })
+      .execute();
+
+    if (result.affected && result.affected > 0) {
+      this.logger.log(`🗑️ Limpiadas ${result.affected} notificaciones antiguas`);
+    }
+  }
+
+  /**
+   * Obtiene el guardia de turno actual
+   */
+  private async getOnCallGuard(): Promise<User | null> {
+    // TODO: Integrar con el sistema on-call existente
+    // Por ahora, obtener el primer usuario YUNO activo
+    const guard = await this.userRepository.findOne({
+      where: { type: 'YUNO', active: true },
+      order: { name: 'ASC' },
+    });
+
+    return guard;
+  }
+
+  /**
+   * Construye el cuerpo del email para el guardia
+   */
+  private buildGuardEmailBody(notification: RiskNotification, guardUser: User): string {
+    const metadata = notification.metadata || {};
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: #f44336; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
+    .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+    .risk-badge { display: inline-block; padding: 5px 10px; border-radius: 3px; font-weight: bold; }
+    .risk-critical { background: #f44336; color: white; }
+    .risk-high { background: #ff9800; color: white; }
+    .risk-medium { background: #ffc107; color: #333; }
+    .actions { margin-top: 20px; }
+    .button { display: inline-block; padding: 10px 20px; margin: 5px; text-decoration: none; border-radius: 5px; }
+    .btn-propagate { background: #f44336; color: white; }
+    .btn-dismiss { background: #4caf50; color: white; }
+    .footer { margin-top: 20px; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>🚨 ALERTA DE RIESGO - Acción Requerida</h2>
+    </div>
+    
+    <div class="content">
+      <p>Hola <strong>${guardUser.name}</strong>,</p>
+      
+      <p>Se ha detectado un riesgo en el sistema que requiere tu atención como guardia de turno:</p>
+      
+      <h3>
+        <span class="risk-badge risk-${notification.risk_level}">
+          ${notification.risk_level.toUpperCase()}
+        </span>
+        ${notification.entity_name}
+      </h3>
+      
+      <p><strong>Tipo:</strong> ${notification.entity_type}</p>
+      <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
+      <p><strong>Intento:</strong> ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}</p>
+      
+      ${metadata.baseline_comparison ? `
+      <h4>📊 Comparación vs Baseline:</h4>
+      <ul>
+        <li>Tasa de error actual: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%</li>
+        <li>Tasa de error baseline: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%</li>
+        <li>Desviación: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%</li>
+      </ul>
+      ` : ''}
+      
+      ${metadata.trend ? `
+      <h4>📈 Tendencia:</h4>
+      <p>Dirección: <strong>${metadata.trend.direction}</strong></p>
+      ` : ''}
+      
+      ${metadata.recommended_actions ? `
+      <h4>💡 Acciones Recomendadas:</h4>
+      <ul>
+        ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
+      </ul>
+      ` : ''}
+      
+      <div class="actions">
+        <h4>⚡ ¿Qué deseas hacer?</h4>
+        <p>
+          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/risk-notifications/${notification.id}/propagate" class="button btn-propagate">
+            📢 Propagar a Todo el Equipo
+          </a>
+          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/risk-notifications/${notification.id}/dismiss" class="button btn-dismiss">
+            ✅ Descartar (Falso Positivo)
+          </a>
+        </p>
+        
+        <p style="color: #f44336; font-weight: bold;">
+          ⏰ Si no respondes en ${this.GUARD_NOTIFICATION_INTERVAL_MINUTES} minutos, se enviará otro recordatorio.
+          Después de ${this.MAX_GUARD_ATTEMPTS} intentos, se escalará automáticamente a todo el equipo.
+        </p>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p>Este es un mensaje automático del Sistema de Predicción de Fallos de Yuno.</p>
+      <p>Intento ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}</p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * Construye el cuerpo del email escalado
+   */
+  private buildEscalatedEmailBody(notification: RiskNotification): string {
+    const metadata = notification.metadata || {};
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: #d32f2f; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
+    .content { background: #fff3e0; padding: 20px; border: 2px solid #d32f2f; }
+    .alert-box { background: #ffebee; border-left: 4px solid #f44336; padding: 15px; margin: 15px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>🚨 ALERTA CRÍTICA ESCALADA</h2>
+    </div>
+    
+    <div class="content">
+      <div class="alert-box">
+        <h3>⚠️ ATENCIÓN INMEDIATA REQUERIDA</h3>
+        <p>Esta alerta fue escalada automáticamente después de ${notification.guard_attempts} intentos sin respuesta del guardia de turno.</p>
+      </div>
+      
+      <h3>Entidad en Riesgo: ${notification.entity_name}</h3>
+      
+      <p><strong>Tipo:</strong> ${notification.entity_type}</p>
+      <p><strong>Nivel de Riesgo:</strong> ${notification.risk_level.toUpperCase()}</p>
+      <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
+      
+      ${metadata.recommended_actions ? `
+      <h4>💡 Acciones Recomendadas:</h4>
+      <ul>
+        ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
+      </ul>
+      ` : ''}
+      
+      <p style="margin-top: 20px;">
+        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/alerts" 
+           style="display: inline-block; padding: 12px 24px; background: #f44336; color: white; text-decoration: none; border-radius: 5px;">
+          Ver Dashboard de Alertas
+        </a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * Construye la explicación de la alerta
+   */
+  private buildAlertExplanation(entity: FailureProbability): string {
+    return `
+Probabilidad de fallo: ${(entity.probability * 100).toFixed(1)}%
+Tasa de error actual: ${(entity.baseline_comparison.current_error_rate * 100).toFixed(2)}%
+Tasa de error baseline: ${(entity.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%
+Tendencia: ${entity.trend.direction}
+
+Acciones recomendadas:
+${entity.recommended_actions.join('\n')}
+    `.trim();
+  }
+
+  /**
+   * Mapea nivel de riesgo a severidad de alerta
+   */
+  private mapRiskToSeverity(riskLevel: string): AlertSeverity {
+    switch (riskLevel) {
+      case 'critical':
+        return AlertSeverity.CRITICAL;
+      case 'high':
+        return AlertSeverity.WARNING;
+      case 'medium':
+        return AlertSeverity.WARNING;
+      default:
+        return AlertSeverity.INFO;
+    }
+  }
+}

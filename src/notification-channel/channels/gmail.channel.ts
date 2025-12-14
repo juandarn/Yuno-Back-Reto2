@@ -49,7 +49,7 @@ export class GmailChannel implements INotificationChannel {
         from,
         to: payload.to,
         subject: payload.subject,
-        html: this.buildEmailTemplate(payload),
+        html: payload.body,  // ✅ CAMBIO: Usar body directamente (ya viene como HTML completo)
       };
 
       const info = await this.transporter.sendMail(mailOptions);
@@ -64,56 +64,4 @@ export class GmailChannel implements INotificationChannel {
   getName(): string {
     return 'gmail';
   }
-
-  private buildEmailTemplate(payload: NotificationPayload): string {
-    const metadataHtml = payload.metadata
-      ? `
-        <div class="metadata">
-          <strong>Detalles adicionales:</strong>
-          <pre>${escapeHtml(JSON.stringify(payload.metadata, null, 2))}</pre>
-        </div>
-      `
-      : '';
-
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background-color: #4285f4; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
-            .content { background-color: #f9f9f9; padding: 20px; border-radius: 0 0 5px 5px; }
-            .footer { margin-top: 20px; font-size: 12px; color: #666; }
-            .metadata { background-color: #e8f0fe; padding: 10px; margin-top: 15px; border-radius: 3px; overflow: auto; }
-            pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h2>${escapeHtml(payload.subject || 'Notificación')}</h2>
-            </div>
-            <div class="content">
-              <p>${escapeHtml(payload.body || '')}</p>
-              ${metadataHtml}
-            </div>
-            <div class="footer">
-              <p>Este es un mensaje automático del sistema de notificaciones.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-  }
-}
-
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }

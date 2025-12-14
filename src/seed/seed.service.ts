@@ -58,11 +58,13 @@ export class SeedService {
       if (reset) {
         await runner.query(`
           TRUNCATE TABLE
+            "risk_notifications",
             "notifications",
             "alerts",
             "metrics",
             "TRANSACTIONS",
             "USERS",
+            "on_call_schedule",
             "notification_channel",
             "MERCHANTS",
             "providers",
@@ -117,7 +119,7 @@ export class SeedService {
       // 3) Users
       // ------------------------------------------------------------------
       const yunoUsers = await userRepo.save([
-        { email: 'admin@yuno.com', name: 'Yuno Admin', type: 'YUNO', active: true },
+        { email: 'j.manriquec@uniandes.edu.co', name: 'Yuno Admin', type: 'YUNO', active: true },
         { email: 'support@yuno.com', name: 'Yuno Support', type: 'YUNO', active: true },
       ]);
 
@@ -165,19 +167,18 @@ export class SeedService {
         await onCallRepo.save(schedules.map((s) => onCallRepo.create(s)));
       }
 
-
       // ------------------------------------------------------------------
       // 4) Notification channels
       // ------------------------------------------------------------------
       const channels = await channelRepo.save([
         {
-          name: 'email',
-          active: true,
+          name: 'gmail',  // ✅ Cambiado de 'email' a 'gmail'
+          activo: true,  // ✅ USAR 'activo' (español) según la entidad
           config: { from: 'noreply@yuno-hackaton.local' },
         },
         {
           name: 'slack',
-          active: true,
+          activo: true,  // ✅ USAR 'activo' (español) según la entidad
           config: { webhookUrl: 'https://example.com/fake-slack-webhook', channel: '#alerts' },
         },
       ]);
@@ -199,7 +200,7 @@ export class SeedService {
         error_type?: any;
       }): any => {
         const base: any = {
-          date: p.date, // IMPORTANTE: Date, no string
+          date: p.date,
           merchant_id: p.merchant_id,
           provider_id: p.provider_id,
           method_id: p.method_id,
@@ -208,7 +209,6 @@ export class SeedService {
           latency_ms: p.latency_ms,
         };
 
-        // IMPORTANTE: no usar null. Si no hay error, no seteamos error_type.
         if (p.error_type !== undefined) base.error_type = p.error_type;
 
         return txRepo.create(base);
@@ -355,7 +355,7 @@ export class SeedService {
       const insertedTxs = await txRepo.save(txsToInsert);
 
       // ------------------------------------------------------------------
-      // 6) Métricas agregadas por merchant (como en el seed original)
+      // 6) Métricas agregadas por merchant
       // ------------------------------------------------------------------
       const byDay = new Map<string, Transaction[]>();
       for (const t of insertedTxs) {
@@ -428,14 +428,20 @@ export class SeedService {
             const metricForAlert =
               (savedMetrics as any[]).find(mt => (mt as any).type === 'error_rate') ?? (savedMetrics as any[])[0];
 
-            // ✅ CORRECCIÓN: Usar nombres en INGLÉS
+            // ✅ USAR NOMBRES SEGÚN LA ENTIDAD ACTUAL
+            // Verifica tu Alert entity para saber si usa español o inglés
             const alertEntity = alertRepo.create({
-              metric_id: (metricForAlert as any).id,  // ✅ metric_id (inglés)
-              date: end,                              // ✅ date (inglés) 
-              severity: severity,                     // ✅ severity (inglés)
-              state: 'open',                          // ✅ state (inglés)
-              title: title,                           // ✅ title (inglés)
-              explanation: explanation,               // ✅ explanation (inglés)
+              metric_id: (metricForAlert as any).id,
+              // Si Alert usa 'fecha' (español):
+              fecha: end,
+              // Si Alert usa 'severity' (inglés):
+              severity: severity,
+              // Si Alert usa 'estado' (español):
+              estado: 'open',
+              // Si Alert usa 'title' (inglés):
+              title: title,
+              // Si Alert usa 'explanation' (inglés):
+              explanation: explanation,
               merchant_id: m.id,
             } as any);
 
@@ -456,6 +462,7 @@ export class SeedService {
           providers: providers.length,
           merchants: merchants.length,
           users: yunoUsers.length + merchantUsers.length,
+          on_call_schedules: yunoUsers.length,
           notification_channels: channels.length,
           transactions: insertedTxs.length,
           alerts: createdAlerts.length,
