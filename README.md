@@ -751,7 +751,7 @@ Loads simplified seed for demos (~500 transactions).
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/Yuno-Back-Reto2.git
+git clone https://github.com/juandarn/Yuno-Back-Reto2.git
 cd Yuno-Back-Reto2
 ```
 
