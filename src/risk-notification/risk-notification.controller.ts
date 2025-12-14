@@ -18,9 +18,15 @@ export class RiskNotificationController {
    * Obtener todas las notificaciones de riesgo activas
    */
   @Get()
-  async getAll(@Query('status') status?: string) {
-    // TODO: Implementar query con filtros
-    return { message: 'List of risk notifications' };
+  async getAll(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.min(200, Math.max(1, Number(limit) || 20));
+
+    return this.riskNotificationService.listMinimal(status, p, l);
   }
 
   /**
@@ -86,15 +92,14 @@ export class RiskNotificationController {
    * Usado por <a href="..."> en correos
    */
   @Get(':id/propagate')
-  async propagateFromEmail(
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
+  async propagateFromEmail(@Param('id') id: string, @Res() res: Response) {
     await this.riskNotificationService.propagateRiskNotification(id);
 
     return res
       .status(200)
-      .send('<h3>✅ Escalado enviado a todo el equipo. Puedes cerrar esta pestaña.</h3>');
+      .send(
+        '<h3>✅ Escalado enviado a todo el equipo. Puedes cerrar esta pestaña.</h3>',
+      );
   }
 
   /**

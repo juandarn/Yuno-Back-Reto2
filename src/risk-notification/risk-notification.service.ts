@@ -32,6 +32,34 @@ export class RiskNotificationService {
     private alertService: AlertService,
   ) {}
 
+  async listMinimal(status?: string, page = 1, limit = 20) {
+    const qb = this.riskNotificationRepository
+      .createQueryBuilder('rn')
+      .select([
+        'rn.id',
+        'rn.entity_type',
+        'rn.entity_name',
+        'rn.risk_level',
+        'rn.status',
+      ]);
+
+    if (status) qb.where('rn.status = :status', { status });
+
+    qb.orderBy('rn.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    return {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      items,
+    };
+  }
+
   /**
    * Cron job principal - Ejecuta cada 5 minutos
    * Revisa predicciones y gestiona notificaciones
@@ -48,11 +76,12 @@ export class RiskNotificationService {
         include_low_risk: false,
       });
 
-      const providerPredictions = await this.failurePredictionService.getPredictions({
-        entity_type: 'provider',
-        time_window_minutes: 60,
-        include_low_risk: false,
-      });
+      const providerPredictions =
+        await this.failurePredictionService.getPredictions({
+          entity_type: 'provider',
+          time_window_minutes: 60,
+          include_low_risk: false,
+        });
 
       const allPredictions = [
         ...predictions.predictions,
@@ -61,10 +90,15 @@ export class RiskNotificationService {
 
       // Filtrar solo MEDIUM, HIGH, CRITICAL
       const riskyEntities = allPredictions.filter(
-        (p) => p.risk_level === 'medium' || p.risk_level === 'high' || p.risk_level === 'critical',
+        (p) =>
+          p.risk_level === 'medium' ||
+          p.risk_level === 'high' ||
+          p.risk_level === 'critical',
       );
 
-      this.logger.log(`📊 Encontradas ${riskyEntities.length} entidades en riesgo`);
+      this.logger.log(
+        `📊 Encontradas ${riskyEntities.length} entidades en riesgo`,
+      );
 
       // 2. Procesar cada entidad en riesgo
       for (const entity of riskyEntities) {
@@ -82,7 +116,6 @@ export class RiskNotificationService {
       this.logger.error('❌ Error en revisión periódica:', error);
     }
   }
-
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async checkGuardRetries() {
@@ -129,7 +162,9 @@ export class RiskNotificationService {
     });
 
     if (recentlyDismissed) {
-      this.logger.log(`🚫 ${entity.entity_name} fue descartada recientemente - no notificar`);
+      this.logger.log(
+        `🚫 ${entity.entity_name} fue descartada recientemente - no notificar`,
+      );
       return;
     }
 
@@ -141,12 +176,16 @@ export class RiskNotificationService {
    * Notifica al guardia de turno sobre una entidad en riesgo
    */
   private async notifyGuard(entity: FailureProbability) {
-    this.logger.log(`🚨 Nueva entidad en riesgo detectada: ${entity.entity_name} (${entity.risk_level})`);
+    this.logger.log(
+      `🚨 Nueva entidad en riesgo detectada: ${entity.entity_name} (${entity.risk_level})`,
+    );
 
     // Obtener guardia de turno
     const guardUser = await this.getOnCallGuard();
     if (!guardUser) {
-      this.logger.error('❌ No hay guardia de turno disponible - escalando directamente');
+      this.logger.error(
+        '❌ No hay guardia de turno disponible - escalando directamente',
+      );
       await this.escalateToAll(entity, null);
       return;
     }
@@ -156,7 +195,8 @@ export class RiskNotificationService {
       severity: this.mapRiskToSeverity(entity.risk_level),
       title: `⚠️ Riesgo ${entity.risk_level.toUpperCase()} detectado: ${entity.entity_name}`,
       explanation: this.buildAlertExplanation(entity),
-      merchant_id: entity.entity_type === 'merchant' ? entity.entity_id : undefined,
+      merchant_id:
+        entity.entity_type === 'merchant' ? entity.entity_id : undefined,
     });
 
     // Registrar notificación de riesgo
@@ -183,7 +223,9 @@ export class RiskNotificationService {
     // Enviar notificación al guardia
     await this.sendGuardNotification(guardUser, alert, riskNotification);
 
-    this.logger.log(`✉️ Guardia notificado: ${guardUser.name} (${guardUser.email})`);
+    this.logger.log(
+      `✉️ Guardia notificado: ${guardUser.name} (${guardUser.email})`,
+    );
   }
 
   /**
@@ -214,15 +256,11 @@ export class RiskNotificationService {
       }),
     });
 
-    await this.notificationService.sendNotification(
-      notification.id,
-      'gmail',
-      {
-        to: guardUser.email,
-        subject: `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`,
-        body: this.buildGuardEmailBody(riskNotification, guardUser),
-      },
-    );
+    await this.notificationService.sendNotification(notification.id, 'gmail', {
+      to: guardUser.email,
+      subject: `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`,
+      body: this.buildGuardEmailBody(riskNotification, guardUser),
+    });
   }
 
   /**
@@ -320,7 +358,9 @@ export class RiskNotificationService {
       where: { type: 'YUNO', active: true },
     });
 
-    this.logger.log(`📢 Escalando ${riskNotification!.entity_name} a ${yunoUsers.length} empleados de Yuno`);
+    this.logger.log(
+      `📢 Escalando ${riskNotification!.entity_name} a ${yunoUsers.length} empleados de Yuno`,
+    );
 
     // Crear alerta general
     const alert = await this.alertService.create({
@@ -362,7 +402,9 @@ export class RiskNotificationService {
       );
     }
 
-    this.logger.log(`✅ Notificación escalada enviada a ${yunoUsers.length} empleados`);
+    this.logger.log(
+      `✅ Notificación escalada enviada a ${yunoUsers.length} empleados`,
+    );
   }
 
   /**
@@ -389,7 +431,9 @@ export class RiskNotificationService {
 
     await this.riskNotificationRepository.save(notification);
 
-    this.logger.log(`✅ Notificación descartada por guardia: ${notification.entity_name}`);
+    this.logger.log(
+      `✅ Notificación descartada por guardia: ${notification.entity_name}`,
+    );
 
     return notification;
   }
@@ -406,7 +450,9 @@ export class RiskNotificationService {
       throw new Error('Notificación no encontrada');
     }
 
-    this.logger.log(`📢 Guardia decidió propagar manualmente: ${notification.entity_name}`);
+    this.logger.log(
+      `📢 Guardia decidió propagar manualmente: ${notification.entity_name}`,
+    );
 
     await this.escalateToAll(null, notification);
   }
@@ -429,7 +475,9 @@ export class RiskNotificationService {
 
     await this.riskNotificationRepository.save(notification);
 
-    this.logger.log(`✅ Notificación marcada como resuelta: ${notification.entity_name}`);
+    this.logger.log(
+      `✅ Notificación marcada como resuelta: ${notification.entity_name}`,
+    );
 
     return notification;
   }
@@ -448,7 +496,9 @@ export class RiskNotificationService {
       .execute();
 
     if (result.affected && result.affected > 0) {
-      this.logger.log(`🗑️ Limpiadas ${result.affected} notificaciones antiguas`);
+      this.logger.log(
+        `🗑️ Limpiadas ${result.affected} notificaciones antiguas`,
+      );
     }
   }
 
@@ -469,7 +519,10 @@ export class RiskNotificationService {
   /**
    * Construye el cuerpo del email para el guardia
    */
-  private buildGuardEmailBody(notification: RiskNotification, guardUser: User): string {
+  private buildGuardEmailBody(
+    notification: RiskNotification,
+    guardUser: User,
+  ): string {
     const metadata = notification.metadata || {};
 
     const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'; // pon tu puerto real
@@ -523,26 +576,38 @@ export class RiskNotificationService {
       <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
       <p><strong>Intento:</strong> ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}</p>
       
-      ${metadata.baseline_comparison ? `
+      ${
+        metadata.baseline_comparison
+          ? `
       <h4>📊 Comparación vs Baseline:</h4>
       <ul>
         <li>Tasa de error actual: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%</li>
         <li>Tasa de error baseline: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%</li>
         <li>Desviación: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%</li>
       </ul>
-      ` : ''}
+      `
+          : ''
+      }
       
-      ${metadata.trend ? `
+      ${
+        metadata.trend
+          ? `
       <h4>📈 Tendencia:</h4>
       <p>Dirección: <strong>${metadata.trend.direction}</strong></p>
-      ` : ''}
+      `
+          : ''
+      }
       
-      ${metadata.recommended_actions ? `
+      ${
+        metadata.recommended_actions
+          ? `
       <h4>💡 Acciones Recomendadas:</h4>
       <ul>
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
-      ` : ''}
+      `
+          : ''
+      }
       
       <div class="actions">
         <h4>⚡ Dirigete a la aplicación para decidir que hacer</h4>
@@ -600,12 +665,16 @@ export class RiskNotificationService {
       <p><strong>Nivel de Riesgo:</strong> ${notification.risk_level.toUpperCase()}</p>
       <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
       
-      ${metadata.recommended_actions ? `
+      ${
+        metadata.recommended_actions
+          ? `
       <h4>💡 Acciones Recomendadas:</h4>
       <ul>
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
-      ` : ''}
+      `
+          : ''
+      }
       
       <p style="margin-top: 20px;">
         ⚡ Dirigete a la aplicación para decidir que hacer
