@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Param, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, Res } from '@nestjs/common';
 import { RiskNotificationService } from './risk-notification.service';
 import { RiskNotification } from './entities/risk-notification.entity';
+import type { Response } from 'express';
 
 export class DismissRiskDto {
   user_id: string;
@@ -74,5 +75,47 @@ export class RiskNotificationController {
   async checkNow(): Promise<{ message: string }> {
     await this.riskNotificationService.checkAndNotifyRisks();
     return { message: 'Risk check triggered successfully' };
+  }
+
+  // =========================================================
+  // ✅ WRAPPERS GET PARA BOTONES EN EMAIL (NO ROMPEN NADA)
+  // =========================================================
+
+  /**
+   * Propagar desde email (GET)
+   * Usado por <a href="..."> en correos
+   */
+  @Get(':id/propagate')
+  async propagateFromEmail(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    await this.riskNotificationService.propagateRiskNotification(id);
+
+    return res
+      .status(200)
+      .send('<h3>✅ Escalado enviado a todo el equipo. Puedes cerrar esta pestaña.</h3>');
+  }
+
+  /**
+   * Descartar desde email (GET)
+   * Usado por <a href="..."> en correos
+   */
+  @Get(':id/dismiss')
+  async dismissFromEmail(
+    @Param('id') id: string,
+    @Query('user_id') userId: string,
+    @Query('reason') reason: string,
+    @Res() res: Response,
+  ) {
+    await this.riskNotificationService.dismissRiskNotification(
+      id,
+      userId || 'email-action',
+      reason || 'Dismissed from email button',
+    );
+
+    return res
+      .status(200)
+      .send('<h3>✅ Notificación descartada. Puedes cerrar esta pestaña.</h3>');
   }
 }

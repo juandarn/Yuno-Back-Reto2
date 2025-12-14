@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, IsNull } from 'typeorm';
+import { Repository, LessThan, IsNull, MoreThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { RiskNotification } from '../risk-notification/entities/risk-notification.entity';
 import { FailurePredictionService } from '../failure-prediction/failure-prediction.service';
@@ -16,7 +16,7 @@ export class RiskNotificationService {
   private readonly logger = new Logger(RiskNotificationService.name);
 
   // Configuración
-  private readonly GUARD_NOTIFICATION_INTERVAL_MINUTES = 15; // Tiempo entre intentos al guardia
+  private readonly GUARD_NOTIFICATION_INTERVAL_MINUTES = 10; // Tiempo entre intentos al guardia
   private readonly MAX_GUARD_ATTEMPTS = 3; // Máximo de intentos antes de escalar
   private readonly RISK_CHECK_INTERVAL_MINUTES = 5; // Cada cuánto revisar riesgos
 
@@ -72,7 +72,7 @@ export class RiskNotificationService {
       }
 
       // 3. Revisar notificaciones pendientes del guardia
-      await this.checkPendingGuardNotifications();
+      //await this.checkPendingGuardNotifications();
 
       // 4. Limpiar notificaciones resueltas antiguas (opcional)
       await this.cleanupOldNotifications();
@@ -81,6 +81,12 @@ export class RiskNotificationService {
     } catch (error) {
       this.logger.error('❌ Error en revisión periódica:', error);
     }
+  }
+
+
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async checkGuardRetries() {
+    await this.checkPendingGuardNotifications();
   }
 
   /**
@@ -111,12 +117,14 @@ export class RiskNotificationService {
     }
 
     // Verificar si fue descartada recientemente (últimas 24h)
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     const recentlyDismissed = await this.riskNotificationRepository.findOne({
       where: {
         entity_type: entity.entity_type,
         entity_id: entity.entity_id,
         dismissed_by_guard: true,
-        dismissed_at: LessThan(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+        dismissed_at: MoreThan(cutoff),
       },
     });
 
@@ -219,33 +227,31 @@ export class RiskNotificationService {
 
   /**
    * Revisa notificaciones pendientes del guardia
-   * Si han pasado 15 minutos sin respuesta, envía otro intento (máximo 3)
+   * Si ya pasó el intervalo, reintenta (máximo 3) o escala
    */
   private async checkPendingGuardNotifications() {
+    const cutoff = new Date(
+      Date.now() - this.GUARD_NOTIFICATION_INTERVAL_MINUTES * 60 * 1000,
+    );
+
     const pendingNotifications = await this.riskNotificationRepository.find({
       where: {
         status: 'guard_notified' as any,
         escalated_to_all: false,
         dismissed_by_guard: false,
         resolved: false,
+        last_guard_notification: LessThan(cutoff),
       },
     });
 
     for (const notification of pendingNotifications) {
-      const minutesSinceLastNotification =
-        (Date.now() - new Date(notification.last_guard_notification).getTime()) / (1000 * 60);
-
-      if (minutesSinceLastNotification >= this.GUARD_NOTIFICATION_INTERVAL_MINUTES) {
-        if (notification.guard_attempts < this.MAX_GUARD_ATTEMPTS) {
-          // Enviar otro intento
-          await this.retryGuardNotification(notification);
-        } else {
-          // Máximo de intentos alcanzado - escalar a todos
-          this.logger.warn(
-            `⏰ Guardia no respondió después de ${this.MAX_GUARD_ATTEMPTS} intentos - escalando ${notification.entity_name}`,
-          );
-          await this.escalateToAll(null, notification);
-        }
+      if (notification.guard_attempts < this.MAX_GUARD_ATTEMPTS) {
+        await this.retryGuardNotification(notification);
+      } else {
+        this.logger.warn(
+          `⏰ Guardia no respondió después de ${this.MAX_GUARD_ATTEMPTS} intentos - escalando ${notification.entity_name}`,
+        );
+        await this.escalateToAll(null, notification);
       }
     }
   }
@@ -466,7 +472,16 @@ export class RiskNotificationService {
   private buildGuardEmailBody(notification: RiskNotification, guardUser: User): string {
     const metadata = notification.metadata || {};
 
+    const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'; // pon tu puerto real
+
+    const propagateUrl = `${BACKEND_URL}/risk-notifications/${notification.id}/propagate`;
+    const dismissUrl =
+      `${BACKEND_URL}/risk-notifications/${notification.id}/dismiss` +
+      `?user_id=${encodeURIComponent(guardUser.id)}` +
+      `&reason=${encodeURIComponent('Falso positivo')}`;
+
     return `
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -530,15 +545,7 @@ export class RiskNotificationService {
       ` : ''}
       
       <div class="actions">
-        <h4>⚡ ¿Qué deseas hacer?</h4>
-        <p>
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/risk-notifications/${notification.id}/propagate" class="button btn-propagate">
-            📢 Propagar a Todo el Equipo
-          </a>
-          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/risk-notifications/${notification.id}/dismiss" class="button btn-dismiss">
-            ✅ Descartar (Falso Positivo)
-          </a>
-        </p>
+        <h4>⚡ Dirigete a la aplicación para decidir que hacer</h4>
         
         <p style="color: #f44336; font-weight: bold;">
           ⏰ Si no respondes en ${this.GUARD_NOTIFICATION_INTERVAL_MINUTES} minutos, se enviará otro recordatorio.
@@ -601,10 +608,7 @@ export class RiskNotificationService {
       ` : ''}
       
       <p style="margin-top: 20px;">
-        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/alerts" 
-           style="display: inline-block; padding: 12px 24px; background: #f44336; color: white; text-decoration: none; border-radius: 5px;">
-          Ver Dashboard de Alertas
-        </a>
+        ⚡ Dirigete a la aplicación para decidir que hacer
       </p>
     </div>
   </div>
