@@ -98,12 +98,15 @@ export class SeedService {
         );
       }
 
-      // 1) Catálogos
+      // 1) Catálogos expandidos
       const countries = await countryRepo.save([
         { code: 'CO', name: 'Colombia' },
         { code: 'MX', name: 'Mexico' },
         { code: 'BR', name: 'Brazil' },
         { code: 'US', name: 'United States' },
+        { code: 'AR', name: 'Argentina' },
+        { code: 'CL', name: 'Chile' },
+        { code: 'PE', name: 'Peru' },
       ]);
 
       const methods = await methodRepo.save([
@@ -111,6 +114,8 @@ export class SeedService {
         { name: 'PSE' },
         { name: 'Transferencia Bancaria' },
         { name: 'Wallet Digital' },
+        { name: 'Efectivo' },
+        { name: 'Débito' },
       ]);
 
       const providers = await providerRepo.save([
@@ -118,13 +123,26 @@ export class SeedService {
         { name: 'Adyen' },
         { name: 'DLocal' },
         { name: 'PayU' },
+        { name: 'MercadoPago' },
+        { name: 'Ebanx' },
+        { name: 'PayPal' },
+        { name: 'Kushki' },
       ]);
 
-      // 2) Merchants
+      // 2) Merchants expandidos
       const merchants = await merchantRepo.save([
         { name: 'Shopito' },
         { name: 'StoreX' },
         { name: 'Zoop' },
+        { name: 'TechMart' },
+        { name: 'FashionHub' },
+        { name: 'FoodExpress' },
+        { name: 'ElectroMax' },
+        { name: 'TravelPlus' },
+        { name: 'BookStore' },
+        { name: 'GameZone' },
+        { name: 'PetShop' },
+        { name: 'SportsPro' },
       ]);
 
       // 3) Users
@@ -213,8 +231,6 @@ export class SeedService {
       // 5) Transacciones
       const txsToInsert: Transaction[] = [];
 
-      // Nota: provider_id y method_id son number en tu caso.
-      // merchant_id es UUID string.
       const makeTx = (p: {
         date: Date;
         merchant_id: string;
@@ -237,8 +253,8 @@ export class SeedService {
 
         if (p.error_type !== undefined) (base as any).error_type = p.error_type;
 
-        const entity = txRepo.create(base); // aqui TS puede inferir Transaction | Transaction[]
-        return entity as Transaction; // forzamos el overload correcto
+        const entity = txRepo.create(base);
+        return entity as Transaction;
       };
 
       // ------------------------------------------------------------------
@@ -285,7 +301,7 @@ export class SeedService {
           );
         }
 
-        // Ruido adicional (no afecta approved, pero sirve para dashboards)
+        // Ruido adicional
         const noise = randInt(5, 20);
         for (let n = 0; n < noise; n++) {
           const r = Math.random();
@@ -317,70 +333,91 @@ export class SeedService {
       }
 
       // ------------------------------------------------------------------
-      // 5.2) Tus escenarios previos (health graph), pero ahora distribuidos
-      // en los últimos 30 días (no solo últimos 60 min).
+      // 5.2) ESCENARIOS EXPANDIDOS con más variedad
       // ------------------------------------------------------------------
       const DAYS_BACK_HEALTH = 30;
 
-      // ESCENARIO 1: OK - Shopito -> Stripe -> Tarjeta -> CO
-      for (let i = 0; i < 150; i++) {
-        const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-        const date = randomTimeWithinUTCDate(dayStart);
-        const status: TxStatus =
-          Math.random() < 0.95 ? TxStatus.APPROVED : TxStatus.DECLINED;
+      // ESCENARIO 1: OK - Múltiples merchants con Stripe en diferentes países
+      const stripeOkRoutes = [
+        { merchant: 0, country: 'CO', approval: 0.95, latency: [200, 500] },
+        { merchant: 3, country: 'MX', approval: 0.93, latency: [250, 600] },
+        { merchant: 6, country: 'US', approval: 0.96, latency: [180, 450] },
+        { merchant: 9, country: 'BR', approval: 0.92, latency: [300, 700] },
+      ];
 
-        txsToInsert.push(
-          makeTx({
-            date,
-            merchant_id: merchants[0].id,
-            provider_id: Number((providers[0] as any).id),
-            method_id: Number((methods[0] as any).id),
-            country_code: 'CO',
-            status,
-            latency_ms: randInt(200, 500),
-          }),
-        );
-      }
+      for (const route of stripeOkRoutes) {
+        for (let i = 0; i < 200; i++) {
+          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
+          const date = randomTimeWithinUTCDate(dayStart);
+          const status: TxStatus =
+            Math.random() < route.approval ? TxStatus.APPROVED : TxStatus.DECLINED;
 
-      // ESCENARIO 2: WARNING - StoreX -> Adyen -> PSE -> CO
-      for (let i = 0; i < 100; i++) {
-        const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-        const date = randomTimeWithinUTCDate(dayStart);
-
-        let status: TxStatus = TxStatus.APPROVED;
-        let error_type: string | undefined = undefined;
-        let latency_ms = randInt(800, 2000);
-
-        const r = Math.random();
-        if (r < 0.65) {
-          status = TxStatus.APPROVED;
-          latency_ms = randInt(800, 2000);
-        } else if (r < 0.82) {
-          status = TxStatus.DECLINED;
-          latency_ms = randInt(600, 1500);
-        } else {
-          status = TxStatus.ERROR;
-          error_type = 'network';
-          latency_ms = randInt(2000, 4000);
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[0] as any).id), // Stripe
+              method_id: Number((methods[0] as any).id), // Tarjeta
+              country_code: route.country,
+              status,
+              latency_ms: randInt(route.latency[0], route.latency[1]),
+            }),
+          );
         }
-
-        txsToInsert.push(
-          makeTx({
-            date,
-            merchant_id: merchants[1].id,
-            provider_id: Number((providers[1] as any).id),
-            method_id: Number((methods[1] as any).id),
-            country_code: 'CO',
-            status,
-            error_type,
-            latency_ms,
-          }),
-        );
       }
 
-      // ESCENARIO 3: CRITICAL - múltiples merchants -> DLocal -> PSE -> CO
-      for (const merchant of merchants) {
-        for (let i = 0; i < 60; i++) {
+      // ESCENARIO 2: WARNING - Adyen con PSE en varios merchants
+      const adyenWarningRoutes = [
+        { merchant: 1, country: 'CO', approval: 0.75, errorRate: 0.15 },
+        { merchant: 4, country: 'CO', approval: 0.72, errorRate: 0.18 },
+        { merchant: 7, country: 'CO', approval: 0.78, errorRate: 0.12 },
+      ];
+
+      for (const route of adyenWarningRoutes) {
+        for (let i = 0; i < 150; i++) {
+          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
+          const date = randomTimeWithinUTCDate(dayStart);
+
+          let status: TxStatus = TxStatus.APPROVED;
+          let error_type: string | undefined = undefined;
+          let latency_ms = randInt(800, 2000);
+
+          const r = Math.random();
+          if (r < route.approval) {
+            status = TxStatus.APPROVED;
+          } else if (r < route.approval + 0.1) {
+            status = TxStatus.DECLINED;
+          } else {
+            status = TxStatus.ERROR;
+            error_type = 'network';
+            latency_ms = randInt(2000, 4000);
+          }
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[1] as any).id), // Adyen
+              method_id: Number((methods[1] as any).id), // PSE
+              country_code: route.country,
+              status,
+              error_type,
+              latency_ms,
+            }),
+          );
+        }
+      }
+
+      // ESCENARIO 3: CRITICAL - DLocal con múltiples problemas
+      const dlocalCriticalRoutes = [
+        { merchant: 2, country: 'CO', approval: 0.40, errorRate: 0.35 },
+        { merchant: 5, country: 'MX', approval: 0.35, errorRate: 0.40 },
+        { merchant: 8, country: 'BR', approval: 0.38, errorRate: 0.37 },
+        { merchant: 10, country: 'AR', approval: 0.42, errorRate: 0.33 },
+      ];
+
+      for (const route of dlocalCriticalRoutes) {
+        for (let i = 0; i < 180; i++) {
           const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
           const date = randomTimeWithinUTCDate(dayStart);
 
@@ -389,13 +426,13 @@ export class SeedService {
           let latency_ms = randInt(3000, 6000);
 
           const r = Math.random();
-          if (r < 0.35) {
+          if (r < route.approval) {
             status = TxStatus.APPROVED;
             latency_ms = randInt(3000, 6000);
-          } else if (r < 0.5) {
+          } else if (r < route.approval + 0.15) {
             status = TxStatus.DECLINED;
             latency_ms = randInt(2000, 4000);
-          } else if (r < 0.8) {
+          } else if (r < route.approval + 0.35) {
             status = TxStatus.ERROR;
             error_type = 'provider_down';
             latency_ms = randInt(5000, 10000);
@@ -408,10 +445,10 @@ export class SeedService {
           txsToInsert.push(
             makeTx({
               date,
-              merchant_id: merchant.id,
-              provider_id: Number((providers[2] as any).id),
-              method_id: Number((methods[1] as any).id),
-              country_code: 'CO',
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[2] as any).id), // DLocal
+              method_id: Number((methods[1] as any).id), // PSE
+              country_code: route.country,
               status,
               error_type,
               latency_ms,
@@ -420,41 +457,190 @@ export class SeedService {
         }
       }
 
-      // ESCENARIO 4: misma ruta pero OK en México (contraste)
-      for (let i = 0; i < 120; i++) {
-        const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-        const date = randomTimeWithinUTCDate(dayStart);
-        const status: TxStatus =
-          Math.random() < 0.92 ? TxStatus.APPROVED : TxStatus.DECLINED;
-
-        txsToInsert.push(
-          makeTx({
-            date,
-            merchant_id: merchants[0].id,
-            provider_id: Number((providers[2] as any).id),
-            method_id: Number((methods[1] as any).id),
-            country_code: 'MX',
-            status,
-            latency_ms: randInt(300, 700),
-          }),
-        );
-      }
-
-      // ESCENARIO 5: rutas OK extra para variedad
-      const additionalRoutes = [
-        { merchant: 1, provider: 0, method: 0, country: 'MX', approval: 0.88 },
-        { merchant: 2, provider: 1, method: 2, country: 'BR', approval: 0.91 },
-        { merchant: 0, provider: 3, method: 3, country: 'US', approval: 0.93 },
+      // ESCENARIO 4: PayU con rendimiento variado
+      const payuMixedRoutes = [
+        { merchant: 3, country: 'CO', approval: 0.88, latency: [400, 900] },
+        { merchant: 6, country: 'MX', approval: 0.85, latency: [500, 1000] },
+        { merchant: 9, country: 'AR', approval: 0.82, latency: [600, 1200] },
       ];
 
-      for (const route of additionalRoutes) {
-        for (let i = 0; i < 80; i++) {
+      for (const route of payuMixedRoutes) {
+        for (let i = 0; i < 160; i++) {
           const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
           const date = randomTimeWithinUTCDate(dayStart);
           const status: TxStatus =
-            Math.random() < route.approval
-              ? TxStatus.APPROVED
-              : TxStatus.DECLINED;
+            Math.random() < route.approval ? TxStatus.APPROVED : TxStatus.DECLINED;
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[3] as any).id), // PayU
+              method_id: Number((methods[0] as any).id), // Tarjeta
+              country_code: route.country,
+              status,
+              latency_ms: randInt(route.latency[0], route.latency[1]),
+            }),
+          );
+        }
+      }
+
+      // ESCENARIO 5: MercadoPago - excelente en algunos países
+      const mercadoPagoRoutes = [
+        { merchant: 1, country: 'AR', approval: 0.97, latency: [200, 500] },
+        { merchant: 4, country: 'BR', approval: 0.96, latency: [250, 550] },
+        { merchant: 7, country: 'MX', approval: 0.94, latency: [300, 600] },
+        { merchant: 11, country: 'CL', approval: 0.95, latency: [280, 580] },
+      ];
+
+      for (const route of mercadoPagoRoutes) {
+        for (let i = 0; i < 190; i++) {
+          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
+          const date = randomTimeWithinUTCDate(dayStart);
+          const status: TxStatus =
+            Math.random() < route.approval ? TxStatus.APPROVED : TxStatus.DECLINED;
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[4] as any).id), // MercadoPago
+              method_id: Number((methods[3] as any).id), // Wallet Digital
+              country_code: route.country,
+              status,
+              latency_ms: randInt(route.latency[0], route.latency[1]),
+            }),
+          );
+        }
+      }
+
+      // ESCENARIO 6: Ebanx - problemas específicos en Brasil
+      const ebanxRoutes = [
+        { merchant: 2, country: 'BR', approval: 0.68, errorRate: 0.22 },
+        { merchant: 5, country: 'BR', approval: 0.65, errorRate: 0.25 },
+        { merchant: 10, country: 'CL', approval: 0.89, errorRate: 0.05 }, // OK en Chile
+      ];
+
+      for (const route of ebanxRoutes) {
+        for (let i = 0; i < 140; i++) {
+          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
+          const date = randomTimeWithinUTCDate(dayStart);
+
+          let status: TxStatus = TxStatus.APPROVED;
+          let error_type: string | undefined = undefined;
+          let latency_ms = randInt(600, 1500);
+
+          const r = Math.random();
+          if (r < route.approval) {
+            status = TxStatus.APPROVED;
+          } else if (r < route.approval + 0.15) {
+            status = TxStatus.DECLINED;
+          } else {
+            status = TxStatus.ERROR;
+            error_type = 'network';
+            latency_ms = randInt(2000, 5000);
+          }
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[5] as any).id), // Ebanx
+              method_id: Number((methods[2] as any).id), // Transferencia
+              country_code: route.country,
+              status,
+              error_type,
+              latency_ms,
+            }),
+          );
+        }
+      }
+
+      // ESCENARIO 7: PayPal - muy estable en US, variable en LATAM
+      const paypalRoutes = [
+        { merchant: 0, country: 'US', approval: 0.98, latency: [150, 400] },
+        { merchant: 3, country: 'US', approval: 0.97, latency: [160, 420] },
+        { merchant: 6, country: 'MX', approval: 0.84, latency: [500, 1200] },
+        { merchant: 9, country: 'CO', approval: 0.81, latency: [600, 1400] },
+      ];
+
+      for (const route of paypalRoutes) {
+        for (let i = 0; i < 170; i++) {
+          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
+          const date = randomTimeWithinUTCDate(dayStart);
+          const status: TxStatus =
+            Math.random() < route.approval ? TxStatus.APPROVED : TxStatus.DECLINED;
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[6] as any).id), // PayPal
+              method_id: Number((methods[3] as any).id), // Wallet
+              country_code: route.country,
+              status,
+              latency_ms: randInt(route.latency[0], route.latency[1]),
+            }),
+          );
+        }
+      }
+
+      // ESCENARIO 8: Kushki - problemas intermitentes
+      const kushkiRoutes = [
+        { merchant: 4, country: 'PE', approval: 0.76, errorRate: 0.14 },
+        { merchant: 8, country: 'CO', approval: 0.73, errorRate: 0.17 },
+        { merchant: 11, country: 'MX', approval: 0.79, errorRate: 0.11 },
+      ];
+
+      for (const route of kushkiRoutes) {
+        for (let i = 0; i < 130; i++) {
+          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
+          const date = randomTimeWithinUTCDate(dayStart);
+
+          let status: TxStatus = TxStatus.APPROVED;
+          let error_type: string | undefined = undefined;
+          let latency_ms = randInt(700, 1800);
+
+          const r = Math.random();
+          if (r < route.approval) {
+            status = TxStatus.APPROVED;
+          } else if (r < route.approval + 0.1) {
+            status = TxStatus.DECLINED;
+          } else {
+            status = TxStatus.ERROR;
+            error_type = 'timeout';
+            latency_ms = randInt(3000, 7000);
+          }
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchants[route.merchant].id,
+              provider_id: Number((providers[7] as any).id), // Kushki
+              method_id: Number((methods[0] as any).id), // Tarjeta
+              country_code: route.country,
+              status,
+              error_type,
+              latency_ms,
+            }),
+          );
+        }
+      }
+
+      // ESCENARIO 9: Métodos de pago alternativos
+      const alternativeMethodsRoutes = [
+        { merchant: 1, provider: 4, method: 4, country: 'MX', approval: 0.90 }, // Efectivo
+        { merchant: 5, provider: 4, method: 4, country: 'CO', approval: 0.88 }, // Efectivo
+        { merchant: 2, provider: 0, method: 5, country: 'BR', approval: 0.91 }, // Débito
+        { merchant: 7, provider: 1, method: 5, country: 'US', approval: 0.94 }, // Débito
+      ];
+
+      for (const route of alternativeMethodsRoutes) {
+        for (let i = 0; i < 120; i++) {
+          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
+          const date = randomTimeWithinUTCDate(dayStart);
+          const status: TxStatus =
+            Math.random() < route.approval ? TxStatus.APPROVED : TxStatus.DECLINED;
 
           txsToInsert.push(
             makeTx({
@@ -464,7 +650,7 @@ export class SeedService {
               method_id: Number((methods[route.method] as any).id),
               country_code: route.country,
               status,
-              latency_ms: randInt(300, 800),
+              latency_ms: randInt(300, 900),
             }),
           );
         }
@@ -619,6 +805,18 @@ export class SeedService {
             to: to.toISOString(),
           },
           note: 'Se insertaron aprobadas diarias para 14 días (semana pasada expected y semana actual actual) con fechas en UTC.',
+        },
+        summary: {
+          total_scenarios: 9,
+          merchants_with_data: merchants.length,
+          providers_with_data: providers.length,
+          countries_with_data: countries.length,
+          payment_methods_with_data: methods.length,
+          health_scenarios: {
+            ok_routes: stripeOkRoutes.length + mercadoPagoRoutes.length + paypalRoutes.length,
+            warning_routes: adyenWarningRoutes.length + kushkiRoutes.length,
+            critical_routes: dlocalCriticalRoutes.length + ebanxRoutes.length,
+          },
         },
         endpoint: 'POST /seed',
       };
