@@ -61,7 +61,7 @@ The **Yuno Payment Intelligence Platform** is a backend solution developed for t
 - Holt-Winters algorithm for time series
 
 ### Frontend Repository
-🔗 [Yuno-Front-Reto2]((https://github.com/juandarn/Yuno-Front-Reto2))
+🔗 [Yuno-Front-Reto2](https://github.com/juandarn/Yuno-Front-Reto2)
 
 ---
 
