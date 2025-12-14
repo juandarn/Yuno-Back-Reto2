@@ -22,8 +22,10 @@ export class ApprovedForecastQueryDto {
   country_code?: string;
 
   @IsISO8601()
-  from: string;
+  @IsOptional()
+  from?: string;
 
   @IsISO8601()
-  to: string;
+  @IsOptional()
+  to?: string;
 }
