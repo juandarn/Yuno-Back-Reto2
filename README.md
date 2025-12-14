@@ -1,3 +1,6 @@
+
+![Yuno Logo](https://i.ibb.co/Lz8MTdF7/YUNO-LOGO-BLUE.png)
+
 # 🚀 Yuno Payment Intelligence Platform - Backend
 
 Intelligent payment failure detection and prediction system, designed to automatically identify anomalies and correlate issues across merchants, providers, payment methods, and countries.
@@ -56,6 +59,9 @@ The **Yuno Payment Intelligence Platform** is a backend solution developed for t
 - Transaction volume prediction
 - Expected vs Actual comparison
 - Holt-Winters algorithm for time series
+
+### Frontend Repository
+🔗 [Yuno-Front-Reto2]((https://github.com/juandarn/Yuno-Front-Reto2))
 
 ---
 
