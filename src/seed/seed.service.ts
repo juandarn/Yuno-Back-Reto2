@@ -1,8 +1,10 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+// Ajusta imports según tus enums/ubicación real:
 import { TxStatus } from '../common/enums';
-import type { DeepPartial } from 'typeorm';
+
+// Ajusta imports de entidades a tu estructura real:
 import { Merchant } from '../merchant/entities/merchant.entity';
 import { User } from '../user/entities/user.entity';
 import { Transaction } from '../transaction/entities/transaction.entity';
@@ -20,33 +22,10 @@ type SeedOptions = { reset?: boolean };
 function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-
 function percentile(sorted: number[], p: number) {
   if (!sorted.length) return 0;
   const idx = Math.ceil((p / 100) * sorted.length) - 1;
   return sorted[Math.max(0, Math.min(idx, sorted.length - 1))];
-}
-
-// Helpers UTC (importante para que case con tu lógica de forecast)
-function startOfDayUTC(d: Date) {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
-}
-function addDaysUTC(d: Date, days: number) {
-  const x = new Date(d);
-  x.setUTCDate(x.getUTCDate() + days);
-  return x;
-}
-function randomTimeWithinUTCDate(dayStartUTC: Date) {
-  const d = new Date(dayStartUTC);
-  d.setUTCHours(randInt(0, 23), randInt(0, 59), randInt(0, 59), 0);
-  return d;
-}
-function pickRandomDayStartUTC(daysBack: number, base = new Date()) {
-  const todayStart = startOfDayUTC(base);
-  const offset = -randInt(0, daysBack);
-  return addDaysUTC(todayStart, offset);
 }
 
 @Injectable()
@@ -61,6 +40,7 @@ export class SeedService {
     await runner.startTransaction();
 
     try {
+      // Repos
       const countryRepo = runner.manager.getRepository(Country);
       const methodRepo = runner.manager.getRepository(PaymentMethod);
       const providerRepo = runner.manager.getRepository(Provider);
@@ -72,6 +52,9 @@ export class SeedService {
       const alertRepo = runner.manager.getRepository(Alert);
       const notifRepo = runner.manager.getRepository(Notification);
 
+      // ------------------------------------------------------------------
+      // Reset opcional (limpia todo y vuelve a sembrar)
+      // ------------------------------------------------------------------
       if (reset) {
         await runner.query(`
           TRUNCATE TABLE
@@ -91,6 +74,7 @@ export class SeedService {
         `);
       }
 
+      // Si ya existe data, evita duplicar (modo no-reset)
       const existingMerchants = await merchantRepo.count();
       if (!reset && existingMerchants > 0) {
         throw new BadRequestException(
@@ -98,12 +82,15 @@ export class SeedService {
         );
       }
 
+      // ------------------------------------------------------------------
       // 1) Catálogos
+      // ------------------------------------------------------------------
       const countries = await countryRepo.save([
         { code: 'CO', name: 'Colombia' },
         { code: 'MX', name: 'Mexico' },
         { code: 'BR', name: 'Brazil' },
         { code: 'US', name: 'United States' },
+        { code: 'AR', name: 'Argentina' },
       ]);
 
       const methods = await methodRepo.save([
@@ -111,6 +98,7 @@ export class SeedService {
         { name: 'PSE' },
         { name: 'Transferencia Bancaria' },
         { name: 'Wallet Digital' },
+        { name: 'Efectivo' },
       ]);
 
       const providers = await providerRepo.save([
@@ -118,29 +106,27 @@ export class SeedService {
         { name: 'Adyen' },
         { name: 'DLocal' },
         { name: 'PayU' },
-      ]);
-
-      // 2) Merchants
-      const merchants = await merchantRepo.save([
-        { name: 'Shopito' },
-        { name: 'StoreX' },
         { name: 'Zoop' },
       ]);
 
+      // ------------------------------------------------------------------
+      // 2) Merchants (más variedad para testing)
+      // ------------------------------------------------------------------
+      const merchants = await merchantRepo.save([
+        { name: 'Shopito' },      // Merchant OK
+        { name: 'StoreX' },       // Merchant MEDIUM risk
+        { name: 'MegaStore' },    // Merchant HIGH risk  
+        { name: 'FastPay' },      // Merchant CRITICAL risk
+        { name: 'SecureShop' },   // Merchant OK
+      ]);
+
+      // ------------------------------------------------------------------
       // 3) Users
+      // ------------------------------------------------------------------
       const yunoUsers = await userRepo.save([
-        {
-          email: 'j.manriquec@uniandes.edu.co',
-          name: 'Yuno Admin',
-          type: 'YUNO',
-          active: true,
-        },
-        {
-          email: 'support@yuno.com',
-          name: 'Yuno Support',
-          type: 'YUNO',
-          active: true,
-        },
+        { email: 'j.manriquec@uniandes.edu.co', name: 'Yuno Admin', type: 'YUNO', active: true },
+        { email: 'support@yuno.com', name: 'Yuno Support', type: 'YUNO', active: true },
+        { email: 'ops@yuno.com', name: 'Yuno Operations', type: 'YUNO', active: true },
       ]);
 
       const merchantUsers: User[] = [];
@@ -157,174 +143,87 @@ export class SeedService {
       }
       await userRepo.save(merchantUsers);
 
+      // ------------------------------------------------------------------
       // 3.1) On-call schedule
+      // ------------------------------------------------------------------
       const onCallRepo = runner.manager.getRepository(OnCallSchedule);
       const nowOnCall = new Date();
-
+      
       if (yunoUsers?.length) {
-        const schedules: Partial<OnCallSchedule>[] = [
-          {
-            user_id: yunoUsers[0].id,
-            priority: 1,
-            active: true,
-            start_at: nowOnCall,
-          },
-        ];
-
-        if (yunoUsers.length > 1) {
-          schedules.push({
-            user_id: yunoUsers[1].id,
-            priority: 2,
-            active: true,
-            start_at: nowOnCall,
-          });
-        }
+        const schedules: Partial<OnCallSchedule>[] = yunoUsers.map((user, index) => ({
+          user_id: user.id,
+          priority: index + 1,
+          active: true,
+          start_at: nowOnCall,
+        }));
 
         await onCallRepo.save(schedules.map((s) => onCallRepo.create(s)));
       }
 
+      // ------------------------------------------------------------------
       // 4) Notification channels
+      // ------------------------------------------------------------------
       const channels = await channelRepo.save([
         {
-          name: 'gmail',
+          name: 'gmail',  // ✅ Debe ser 'gmail' para coincidir con GmailChannel
           activo: true,
           config: { from: 'noreply@yuno-hackaton.local' },
         },
         {
           name: 'slack',
           activo: true,
-          config: {
-            webhookUrl: 'https://example.com/fake-slack-webhook',
-            channel: '#alerts',
-          },
+          config: { webhookUrl: 'https://example.com/fake-slack-webhook', channel: '#alerts' },
         },
       ]);
 
-      // 5) Transacciones
+      // ------------------------------------------------------------------
+      // 5) Transacciones - ESCENARIOS DISEÑADOS PARA FAILURE PREDICTION
+      // ------------------------------------------------------------------
+      const now = new Date();
       const txsToInsert: Transaction[] = [];
 
-      // Nota: provider_id y method_id son number en tu caso.
-      // merchant_id es UUID string.
       const makeTx = (p: {
         date: Date;
-        merchant_id: string;
-        provider_id: number;
-        method_id: number;
+        merchant_id: any;
+        provider_id: any;
+        method_id: any;
         country_code: string;
         status: TxStatus;
         latency_ms: number;
-        error_type?: string;
-      }): Transaction => {
-        const base: DeepPartial<Transaction> = {
+        error_type?: any;
+      }): any => {
+        const base: any = {
           date: p.date,
           merchant_id: p.merchant_id,
-          provider_id: p.provider_id as any,
-          method_id: p.method_id as any,
+          provider_id: p.provider_id,
+          method_id: p.method_id,
           country_code: p.country_code,
           status: p.status,
           latency_ms: p.latency_ms,
         };
 
-        if (p.error_type !== undefined) (base as any).error_type = p.error_type;
+        if (p.error_type !== undefined) base.error_type = p.error_type;
 
-        const entity = txRepo.create(base); // aqui TS puede inferir Transaction | Transaction[]
-        return entity as Transaction; // forzamos el overload correcto
+        return txRepo.create(base);
       };
 
-      // ------------------------------------------------------------------
-      // 5.1) BLOQUE CLAVE: 14 días exactos para expected vs actual
-      // Semana pasada (expected) + semana actual (actual)
-      // ------------------------------------------------------------------
-      const todayStart = startOfDayUTC(new Date());
-      const from = addDaysUTC(todayStart, -6);
-      const to = addDaysUTC(todayStart, 1);
-      const prevFrom = addDaysUTC(from, -7);
-      const prevTo = addDaysUTC(to, -7);
-
-      const testMerchant =
-        merchants.find((m) => m.name === 'Zoop') ?? merchants[2];
-      const testProvider = providers[0]; // Stripe
-      const testMethod = methods[0]; // Tarjeta
-      const testCountry = 'CO';
-
-      const providerId = Number((testProvider as any).id);
-      const methodId = Number((testMethod as any).id);
-
-      // Patrón visible por día (7 + 7)
-      const expectedWeek = [60, 75, 80, 70, 90, 65, 55];
-      const actualWeek = [50, 70, 95, 60, 85, 80, 45];
-
-      // Inserta 14 días consecutivos a partir de prevFrom (UTC day start)
-      for (let i = 0; i < 14; i++) {
-        const dayStart = addDaysUTC(prevFrom, i);
-        const isPrevWeek = i < 7;
-        const approvedCount = isPrevWeek ? expectedWeek[i] : actualWeek[i - 7];
-
-        // Aprobadas (son las que cuenta tu forecast)
-        for (let k = 0; k < approvedCount; k++) {
-          txsToInsert.push(
-            makeTx({
-              date: randomTimeWithinUTCDate(dayStart),
-              merchant_id: testMerchant.id,
-              provider_id: providerId,
-              method_id: methodId,
-              country_code: testCountry,
-              status: TxStatus.APPROVED,
-              latency_ms: randInt(200, 900),
-            }),
-          );
-        }
-
-        // Ruido adicional (no afecta approved, pero sirve para dashboards)
-        const noise = randInt(5, 20);
-        for (let n = 0; n < noise; n++) {
-          const r = Math.random();
-          const status: TxStatus =
-            r < 0.85
-              ? TxStatus.DECLINED
-              : r < 0.95
-                ? TxStatus.ERROR
-                : TxStatus.TIMEOUT;
-
-          txsToInsert.push(
-            makeTx({
-              date: randomTimeWithinUTCDate(dayStart),
-              merchant_id: testMerchant.id,
-              provider_id: providerId,
-              method_id: methodId,
-              country_code: testCountry,
-              status,
-              error_type:
-                status === TxStatus.ERROR
-                  ? 'network'
-                  : status === TxStatus.TIMEOUT
-                    ? 'timeout'
-                    : undefined,
-              latency_ms: randInt(800, 6000),
-            }),
-          );
-        }
-      }
-
-      // ------------------------------------------------------------------
-      // 5.2) Tus escenarios previos (health graph), pero ahora distribuidos
-      // en los últimos 30 días (no solo últimos 60 min).
-      // ------------------------------------------------------------------
-      const DAYS_BACK_HEALTH = 30;
-
-      // ESCENARIO 1: OK - Shopito -> Stripe -> Tarjeta -> CO
-      for (let i = 0; i < 150; i++) {
-        const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-        const date = randomTimeWithinUTCDate(dayStart);
-        const status: TxStatus =
-          Math.random() < 0.95 ? TxStatus.APPROVED : TxStatus.DECLINED;
+      // ================================================================
+      // ESCENARIO 1: Shopito - BASELINE OK (últimas 24h) + DEGRADACIÓN RECIENTE (última hora)
+      // ================================================================
+      // Esto generará un riesgo MEDIUM porque la última hora está peor que el baseline
+      
+      // Baseline (23 horas atrás hasta 1 hora atrás): 95% approval
+      for (let i = 0; i < 200; i++) {
+        const minutesAgo = randInt(60, 23 * 60); // Entre 1h y 23h atrás
+        const date = new Date(now.getTime() - minutesAgo * 60000);
+        const status = Math.random() < 0.95 ? TxStatus.APPROVED : TxStatus.DECLINED;
 
         txsToInsert.push(
           makeTx({
             date,
-            merchant_id: merchants[0].id,
-            provider_id: Number((providers[0] as any).id),
-            method_id: Number((methods[0] as any).id),
+            merchant_id: merchants[0].id, // Shopito
+            provider_id: providers[0].id,
+            method_id: methods[0].id,
             country_code: 'CO',
             status,
             latency_ms: randInt(200, 500),
@@ -332,34 +231,34 @@ export class SeedService {
         );
       }
 
-      // ESCENARIO 2: WARNING - StoreX -> Adyen -> PSE -> CO
+      // Última hora: DEGRADACIÓN - 75% approval, 20% errores
       for (let i = 0; i < 100; i++) {
-        const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-        const date = randomTimeWithinUTCDate(dayStart);
-
-        let status: TxStatus = TxStatus.APPROVED;
-        let error_type: string | undefined = undefined;
-        let latency_ms = randInt(800, 2000);
+        const minutesAgo = randInt(1, 60); // Última hora
+        const date = new Date(now.getTime() - minutesAgo * 60000);
+        
+        let status: TxStatus;
+        let error_type: string | undefined;
+        let latency_ms: number;
 
         const r = Math.random();
-        if (r < 0.65) {
+        if (r < 0.75) {
           status = TxStatus.APPROVED;
-          latency_ms = randInt(800, 2000);
-        } else if (r < 0.82) {
+          latency_ms = randInt(300, 800);
+        } else if (r < 0.95) {
           status = TxStatus.DECLINED;
-          latency_ms = randInt(600, 1500);
+          latency_ms = randInt(400, 1000);
         } else {
           status = TxStatus.ERROR;
           error_type = 'network';
-          latency_ms = randInt(2000, 4000);
+          latency_ms = randInt(2000, 5000);
         }
 
         txsToInsert.push(
           makeTx({
             date,
-            merchant_id: merchants[1].id,
-            provider_id: Number((providers[1] as any).id),
-            method_id: Number((methods[1] as any).id),
+            merchant_id: merchants[0].id,
+            provider_id: providers[0].id,
+            method_id: methods[0].id,
             country_code: 'CO',
             status,
             error_type,
@@ -368,39 +267,231 @@ export class SeedService {
         );
       }
 
-      // ESCENARIO 3: CRITICAL - múltiples merchants -> DLocal -> PSE -> CO
-      for (const merchant of merchants) {
-        for (let i = 0; i < 60; i++) {
-          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-          const date = randomTimeWithinUTCDate(dayStart);
+      // ================================================================
+      // ESCENARIO 2: StoreX - RIESGO MEDIO SOSTENIDO
+      // ================================================================
+      // Error rate constante del 25%, latencia alta
+      
+      for (let i = 0; i < 250; i++) {
+        const minutesAgo = randInt(1, 60); // Última hora
+        const date = new Date(now.getTime() - minutesAgo * 60000);
 
-          let status: TxStatus = TxStatus.APPROVED;
-          let error_type: string | undefined = undefined;
-          let latency_ms = randInt(3000, 6000);
+        let status: TxStatus;
+        let error_type: string | undefined;
+        let latency_ms: number;
+
+        const r = Math.random();
+        if (r < 0.65) {
+          status = TxStatus.APPROVED;
+          latency_ms = randInt(800, 2000);
+        } else if (r < 0.85) {
+          status = TxStatus.DECLINED;
+          latency_ms = randInt(600, 1500);
+        } else {
+          status = TxStatus.ERROR;
+          error_type = 'provider_error';
+          latency_ms = randInt(2000, 4000);
+        }
+
+        txsToInsert.push(
+          makeTx({
+            date,
+            merchant_id: merchants[1].id, // StoreX
+            provider_id: providers[1].id,
+            method_id: methods[1].id,
+            country_code: 'CO',
+            status,
+            error_type,
+            latency_ms,
+          }),
+        );
+      }
+
+      // ================================================================
+      // ESCENARIO 3: MegaStore - RIESGO ALTO (Error rate 40%)
+      // ================================================================
+      
+      for (let i = 0; i < 200; i++) {
+        const minutesAgo = randInt(1, 60);
+        const date = new Date(now.getTime() - minutesAgo * 60000);
+
+        let status: TxStatus;
+        let error_type: string | undefined;
+        let latency_ms: number;
+
+        const r = Math.random();
+        if (r < 0.50) {
+          status = TxStatus.APPROVED;
+          latency_ms = randInt(1000, 3000);
+        } else if (r < 0.70) {
+          status = TxStatus.DECLINED;
+          latency_ms = randInt(800, 2000);
+        } else if (r < 0.90) {
+          status = TxStatus.ERROR;
+          error_type = 'timeout';
+          latency_ms = randInt(5000, 10000);
+        } else {
+          status = TxStatus.TIMEOUT;
+          error_type = 'timeout';
+          latency_ms = randInt(8000, 15000);
+        }
+
+        txsToInsert.push(
+          makeTx({
+            date,
+            merchant_id: merchants[2].id, // MegaStore
+            provider_id: providers[2].id,
+            method_id: methods[1].id,
+            country_code: 'CO',
+            status,
+            error_type,
+            latency_ms,
+          }),
+        );
+      }
+
+      // ================================================================
+      // ESCENARIO 4: FastPay - CRÍTICO (Error rate >50%, casi caído)
+      // ================================================================
+      
+      for (let i = 0; i < 150; i++) {
+        const minutesAgo = randInt(1, 60);
+        const date = new Date(now.getTime() - minutesAgo * 60000);
+
+        let status: TxStatus;
+        let error_type: string | undefined;
+        let latency_ms: number;
+
+        const r = Math.random();
+        if (r < 0.30) {
+          status = TxStatus.APPROVED;
+          latency_ms = randInt(2000, 5000);
+        } else if (r < 0.45) {
+          status = TxStatus.DECLINED;
+          latency_ms = randInt(1500, 3000);
+        } else if (r < 0.75) {
+          status = TxStatus.ERROR;
+          error_type = 'provider_down';
+          latency_ms = randInt(8000, 15000);
+        } else {
+          status = TxStatus.TIMEOUT;
+          error_type = 'timeout';
+          latency_ms = randInt(10000, 20000);
+        }
+
+        txsToInsert.push(
+          makeTx({
+            date,
+            merchant_id: merchants[3].id, // FastPay
+            provider_id: providers[3].id,
+            method_id: methods[2].id,
+            country_code: 'BR',
+            status,
+            error_type,
+            latency_ms,
+          }),
+        );
+      }
+
+      // ================================================================
+      // ESCENARIO 5: SecureShop - TODO OK (para contraste)
+      // ================================================================
+      
+      for (let i = 0; i < 150; i++) {
+        const minutesAgo = randInt(1, 60);
+        const date = new Date(now.getTime() - minutesAgo * 60000);
+        const status = Math.random() < 0.96 ? TxStatus.APPROVED : TxStatus.DECLINED;
+
+        txsToInsert.push(
+          makeTx({
+            date,
+            merchant_id: merchants[4].id, // SecureShop
+            provider_id: providers[0].id,
+            method_id: methods[3].id,
+            country_code: 'MX',
+            status,
+            latency_ms: randInt(200, 400),
+          }),
+        );
+      }
+
+      // ================================================================
+      // ESCENARIO 6: Provider Zoop - CRÍTICO (afecta a todos los merchants)
+      // ================================================================
+      
+      for (const merchant of [merchants[0], merchants[1], merchants[2]]) {
+        for (let i = 0; i < 50; i++) {
+          const minutesAgo = randInt(1, 60);
+          const date = new Date(now.getTime() - minutesAgo * 60000);
+
+          let status: TxStatus;
+          let error_type: string | undefined;
+          let latency_ms: number;
 
           const r = Math.random();
-          if (r < 0.35) {
+          if (r < 0.25) {
             status = TxStatus.APPROVED;
-            latency_ms = randInt(3000, 6000);
-          } else if (r < 0.5) {
+            latency_ms = randInt(3000, 7000);
+          } else if (r < 0.35) {
             status = TxStatus.DECLINED;
-            latency_ms = randInt(2000, 4000);
-          } else if (r < 0.8) {
+            latency_ms = randInt(2000, 5000);
+          } else if (r < 0.70) {
             status = TxStatus.ERROR;
             error_type = 'provider_down';
-            latency_ms = randInt(5000, 10000);
+            latency_ms = randInt(8000, 15000);
           } else {
             status = TxStatus.TIMEOUT;
             error_type = 'timeout';
-            latency_ms = randInt(8000, 15000);
+            latency_ms = randInt(10000, 20000);
           }
 
           txsToInsert.push(
             makeTx({
               date,
               merchant_id: merchant.id,
-              provider_id: Number((providers[2] as any).id),
-              method_id: Number((methods[1] as any).id),
+              provider_id: providers[4].id, // Zoop
+              method_id: methods[1].id,
+              country_code: 'AR',
+              status,
+              error_type,
+              latency_ms,
+            }),
+          );
+        }
+      }
+
+      // ================================================================
+      // ESCENARIO 7: Método PSE en Colombia - RIESGO MEDIO
+      // ================================================================
+      
+      for (const merchant of merchants) {
+        for (let i = 0; i < 30; i++) {
+          const minutesAgo = randInt(1, 60);
+          const date = new Date(now.getTime() - minutesAgo * 60000);
+
+          let status: TxStatus;
+          let error_type: string | undefined;
+          let latency_ms: number;
+
+          const r = Math.random();
+          if (r < 0.70) {
+            status = TxStatus.APPROVED;
+            latency_ms = randInt(1000, 2500);
+          } else if (r < 0.90) {
+            status = TxStatus.DECLINED;
+            latency_ms = randInt(800, 1800);
+          } else {
+            status = TxStatus.ERROR;
+            error_type = 'bank_error';
+            latency_ms = randInt(3000, 6000);
+          }
+
+          txsToInsert.push(
+            makeTx({
+              date,
+              merchant_id: merchant.id,
+              provider_id: providers[randInt(0, 1)].id,
+              method_id: methods[1].id, // PSE
               country_code: 'CO',
               status,
               error_type,
@@ -410,51 +501,25 @@ export class SeedService {
         }
       }
 
-      // ESCENARIO 4: misma ruta pero OK en México (contraste)
-      for (let i = 0; i < 120; i++) {
-        const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-        const date = randomTimeWithinUTCDate(dayStart);
-        const status: TxStatus =
-          Math.random() < 0.92 ? TxStatus.APPROVED : TxStatus.DECLINED;
-
-        txsToInsert.push(
-          makeTx({
-            date,
-            merchant_id: merchants[0].id,
-            provider_id: Number((providers[2] as any).id),
-            method_id: Number((methods[1] as any).id),
-            country_code: 'MX',
-            status,
-            latency_ms: randInt(300, 700),
-          }),
-        );
-      }
-
-      // ESCENARIO 5: rutas OK extra para variedad
-      const additionalRoutes = [
-        { merchant: 1, provider: 0, method: 0, country: 'MX', approval: 0.88 },
-        { merchant: 2, provider: 1, method: 2, country: 'BR', approval: 0.91 },
-        { merchant: 0, provider: 3, method: 3, country: 'US', approval: 0.93 },
-      ];
-
-      for (const route of additionalRoutes) {
-        for (let i = 0; i < 80; i++) {
-          const dayStart = pickRandomDayStartUTC(DAYS_BACK_HEALTH);
-          const date = randomTimeWithinUTCDate(dayStart);
-          const status: TxStatus =
-            Math.random() < route.approval
-              ? TxStatus.APPROVED
-              : TxStatus.DECLINED;
+      // ================================================================
+      // BASELINE DATA (últimas 24h) para tener comparación
+      // ================================================================
+      
+      for (const merchant of merchants) {
+        for (let i = 0; i < 50; i++) {
+          const hoursAgo = randInt(2, 24);
+          const date = new Date(now.getTime() - hoursAgo * 3600000);
+          const status = Math.random() < 0.90 ? TxStatus.APPROVED : TxStatus.DECLINED;
 
           txsToInsert.push(
             makeTx({
               date,
-              merchant_id: merchants[route.merchant].id,
-              provider_id: Number((providers[route.provider] as any).id),
-              method_id: Number((methods[route.method] as any).id),
-              country_code: route.country,
+              merchant_id: merchant.id,
+              provider_id: providers[randInt(0, 3)].id,
+              method_id: methods[randInt(0, 3)].id,
+              country_code: ['CO', 'MX', 'BR'][randInt(0, 2)],
               status,
-              latency_ms: randInt(300, 800),
+              latency_ms: randInt(300, 1000),
             }),
           );
         }
@@ -462,47 +527,38 @@ export class SeedService {
 
       const insertedTxs = await txRepo.save(txsToInsert);
 
-      // 6) Métricas agregadas por merchant
+      // ------------------------------------------------------------------
+      // 6) Métricas agregadas (simplificado)
+      // ------------------------------------------------------------------
       const byDay = new Map<string, Transaction[]>();
       for (const t of insertedTxs) {
-        const d: Date =
-          (t as any).date instanceof Date
-            ? (t as any).date
-            : new Date((t as any).date);
+        const d: Date = (t as any).date instanceof Date ? (t as any).date : new Date((t as any).date);
         const dayKey = d.toISOString().slice(0, 10);
         if (!byDay.has(dayKey)) byDay.set(dayKey, []);
         byDay.get(dayKey)!.push(t);
       }
 
       const createdAlerts: Alert[] = [];
-      const TH_ERROR_RATE_WARNING = 0.08;
-      const TH_ERROR_RATE_CRIT = 0.15;
+      const TH_ERROR_RATE_WARNING = 0.15;
+      const TH_ERROR_RATE_CRIT = 0.30;
 
       for (const [dayKey, txs] of byDay.entries()) {
         const start = new Date(`${dayKey}T00:00:00.000Z`);
         const end = new Date(`${dayKey}T23:59:59.999Z`);
 
         for (const m of merchants) {
-          const mTx = txs.filter(
-            (t) => String((t as any).merchant_id) === String(m.id),
-          );
+          const mTx = txs.filter(t => String((t as any).merchant_id) === String(m.id));
           if (!mTx.length) continue;
 
-          const approved = mTx.filter(
-            (t) => (t as any).status === TxStatus.APPROVED,
-          ).length;
+          const approved = mTx.filter(t => (t as any).status === TxStatus.APPROVED).length;
           const errors = mTx.filter(
-            (t) =>
-              (t as any).status === TxStatus.ERROR ||
-              (t as any).status === TxStatus.TIMEOUT,
+            t => (t as any).status === TxStatus.ERROR || (t as any).status === TxStatus.TIMEOUT,
           ).length;
 
           const approvalRate = approved / mTx.length;
           const errorRate = errors / mTx.length;
 
-          const latSorted = mTx
-            .map((t) => Number((t as any).latency_ms))
-            .sort((a, b) => a - b);
+          const latSorted = mTx.map(t => Number((t as any).latency_ms)).sort((a, b) => a - b);
           const p95 = percentile(latSorted, 95);
 
           const metrics = metricRepo.create([
@@ -535,28 +591,23 @@ export class SeedService {
           const savedMetrics = await metricRepo.save(metrics as any);
 
           if (errorRate >= TH_ERROR_RATE_WARNING) {
-            const severity =
-              errorRate >= TH_ERROR_RATE_CRIT ? 'critical' : 'warning';
+            const severity = errorRate >= TH_ERROR_RATE_CRIT ? 'critical' : 'warning';
             const title = `High error rate for merchant ${m.name}`;
             const explanation =
               `Window: ${dayKey}\n` +
-              `approval_rate=${approvalRate.toFixed(3)} | error_rate=${errorRate.toFixed(3)} | p95_latency=${Math.round(
-                p95,
-              )}ms\n` +
+              `approval_rate=${approvalRate.toFixed(3)} | error_rate=${errorRate.toFixed(3)} | p95_latency=${Math.round(p95)}ms\n` +
               `sample=${mTx.length}`;
 
             const metricForAlert =
-              (savedMetrics as any[]).find(
-                (mt) => (mt as any).type === 'error_rate',
-              ) ?? (savedMetrics as any[])[0];
+              (savedMetrics as any[]).find(mt => (mt as any).type === 'error_rate') ?? (savedMetrics as any[])[0];
 
             const alertEntity = alertRepo.create({
               metric_id: (metricForAlert as any).id,
               fecha: end,
-              severity,
+              severity: severity,
               estado: 'open',
-              title,
-              explanation,
+              title: title,
+              explanation: explanation,
               merchant_id: m.id,
             } as any);
 
@@ -582,33 +633,27 @@ export class SeedService {
           transactions: insertedTxs.length,
           alerts: createdAlerts.length,
         },
-        ids: {
-          merchants: merchants.map((m) => ({ id: m.id, name: m.name })),
-          providers: providers.map((p: any) => ({
-            id: Number(p.id),
-            name: p.name,
-          })),
-          methods: methods.map((m: any) => ({
-            id: Number(m.id),
-            name: m.name,
-          })),
-          countries: countries.map((c: any) => ({
-            code: c.code,
-            name: c.name,
-          })),
+        failure_prediction_scenarios: {
+          low_risk: ['SecureShop'],
+          medium_risk: ['Shopito (degradación reciente)', 'StoreX', 'PSE method'],
+          high_risk: ['MegaStore'],
+          critical_risk: ['FastPay', 'Zoop provider'],
+          description: 'Datos generados para demostrar failure prediction en diferentes niveles de riesgo',
         },
-        forecast_test_route: {
-          merchant: { id: testMerchant.id, name: testMerchant.name },
-          provider: { id: providerId, name: (testProvider as any).name },
-          method: { id: methodId, name: (testMethod as any).name },
-          country: testCountry,
-          range: {
-            prevFrom: prevFrom.toISOString(),
-            prevTo: prevTo.toISOString(),
-            from: from.toISOString(),
-            to: to.toISOString(),
+        expected_predictions: {
+          merchants: {
+            shopito: 'MEDIUM - Degradación en última hora vs baseline',
+            storeX: 'MEDIUM - Error rate 25% sostenido',
+            megaStore: 'HIGH - Error rate 40%',
+            fastPay: 'CRITICAL - Error rate >50%, casi caído',
+            secureShop: 'LOW - Todo funcionando bien (96% approval)',
           },
-          note: 'Se insertaron aprobadas diarias para 14 días (semana pasada expected y semana actual actual) con fechas en UTC.',
+          providers: {
+            zoop: 'CRITICAL - Error rate >65%, afectando múltiples merchants',
+          },
+          methods: {
+            pse: 'MEDIUM - Error rate ~20% en Colombia',
+          },
         },
         endpoint: 'POST /seed',
       };
