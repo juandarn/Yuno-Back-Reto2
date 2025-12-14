@@ -394,7 +394,12 @@ export class TransactionService {
     range: { from: string; to: string };
     weeks_history: number;
     series: Array<{ date: string; actual: number; expected: number }>;
-    risk_analysis?: FailureProbability | null;
+    risk_analysis?: {
+      entity_name: string;
+      risk_level: string;
+      probability: number;
+      recommended_actions: string[];
+    } | null;
   }> {
     const weeksHistory = 1;
 
@@ -443,9 +448,17 @@ export class TransactionService {
     });
 
     // Encontrar la predicción más relevante (mayor riesgo)
-    const riskAnalysis = failurePrediction.predictions.length > 0 
+    const fullRiskAnalysis = failurePrediction.predictions.length > 0 
       ? failurePrediction.predictions[0] 
       : null;
+
+    // Simplificar risk_analysis para enviar solo lo esencial
+    const riskAnalysis = fullRiskAnalysis ? {
+      entity_name: fullRiskAnalysis.entity_name,
+      risk_level: fullRiskAnalysis.risk_level,
+      probability: fullRiskAnalysis.probability,
+      recommended_actions: fullRiskAnalysis.recommended_actions,
+    } : null;
 
     return {
       filters: {
