@@ -12,6 +12,8 @@ import {
   QueryPredictionDto,
   PredictionConfigDto,
   PredictionSummary,
+  TopRiskyEntity,
+  Top3Summary,
 } from './dto/failure-prediction.dto';
 
 @Controller('failure-prediction')
@@ -113,5 +115,70 @@ export class FailurePredictionController {
       methods,
       global_health,
     };
+  }
+
+  /**
+   * Obtener Top 3 de Merchants con mayor probabilidad de caída
+   * GET /failure-prediction/top3/merchants
+   */
+  @Get('top3/merchants')
+  async getTop3Merchants(
+    @Query('time_window_minutes') timeWindow?: number,
+  ): Promise<TopRiskyEntity[]> {
+    return await this.predictionService.getTop3ByEntityType('merchant', {
+      time_window_minutes: timeWindow,
+    });
+  }
+
+  /**
+   * Obtener Top 3 de Providers con mayor probabilidad de caída
+   * GET /failure-prediction/top3/providers
+   */
+  @Get('top3/providers')
+  async getTop3Providers(
+    @Query('time_window_minutes') timeWindow?: number,
+  ): Promise<TopRiskyEntity[]> {
+    return await this.predictionService.getTop3ByEntityType('provider', {
+      time_window_minutes: timeWindow,
+    });
+  }
+
+  /**
+   * Obtener Top 3 de Payment Methods con mayor probabilidad de caída
+   * GET /failure-prediction/top3/methods
+   */
+  @Get('top3/methods')
+  async getTop3Methods(
+    @Query('time_window_minutes') timeWindow?: number,
+  ): Promise<TopRiskyEntity[]> {
+    return await this.predictionService.getTop3ByEntityType('method', {
+      time_window_minutes: timeWindow,
+    });
+  }
+
+  /**
+   * Obtener Top 3 general (todas las entidades combinadas)
+   * GET /failure-prediction/top3/overall
+   */
+  @Get('top3/overall')
+  async getTop3Overall(
+    @Query('time_window_minutes') timeWindow?: number,
+  ): Promise<TopRiskyEntity[]> {
+    return await this.predictionService.getOverallTop3({
+      time_window_minutes: timeWindow,
+    });
+  }
+
+  /**
+   * Obtener Top 3 completo (todas las categorías)
+   * GET /failure-prediction/top3
+   */
+  @Get('top3')
+  async getTop3Summary(
+    @Query('time_window_minutes') timeWindow?: number,
+  ): Promise<Top3Summary> {
+    return await this.predictionService.getTop3Summary({
+      time_window_minutes: timeWindow,
+    });
   }
 }

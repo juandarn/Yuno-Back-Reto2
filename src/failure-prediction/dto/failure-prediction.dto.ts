@@ -48,6 +48,30 @@ export interface PredictionSummary {
   timestamp: Date;
 }
 
+// DTO para Top 3 ranking
+export interface TopRiskyEntity {
+  rank: number; // 1, 2, 3
+  entity_type: 'merchant' | 'provider' | 'method' | 'country' | 'route';
+  entity_id: string;
+  entity_name: string;
+  probability: number; // 0-1
+  risk_level: RiskLevel;
+  error_rate: number;
+  approval_rate: number;
+  latency: number;
+  trend: 'improving' | 'stable' | 'degrading';
+  sample_size: number;
+  timestamp: Date;
+}
+
+export interface Top3Summary {
+  top_merchants: TopRiskyEntity[];
+  top_providers: TopRiskyEntity[];
+  top_methods: TopRiskyEntity[];
+  overall_top_3: TopRiskyEntity[];
+  timestamp: Date;
+}
+
 export class QueryPredictionDto {
   @IsString()
   @IsOptional()

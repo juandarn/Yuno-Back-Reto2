@@ -15,6 +15,8 @@ import {
   PredictionConfigDto,
   Signal,
   RiskLevel,
+  Top3Summary,
+  TopRiskyEntity,
 } from './dto/failure-prediction.dto';
 
 interface EntityMetrics {
@@ -23,7 +25,7 @@ interface EntityMetrics {
   p95_latency: number;
   sample_size: number;
   recent_error_rate: number; // última hora
-  baseline_error_rate: number; // últimas 24h
+  baseline_error_rate: number; // última semana (7 días)
 }
 
 @Injectable()
@@ -70,8 +72,8 @@ export class FailurePredictionService {
   ): Promise<PredictionSummary> {
     const effectiveConfig = this.mergeConfig(config);
     const timeWindowMinutes = query.time_window_minutes || 60;
-    const baselineWindowHours = query.baseline_window_hours || 24;
-    const minSampleSize = query.min_sample_size || 10;
+    const baselineWindowHours = query.baseline_window_hours || 168; // 7 días
+    const minSampleSize = query.min_sample_size || 1;
 
     const now = new Date();
     const recentStart = new Date(now.getTime() - timeWindowMinutes * 60 * 1000);
@@ -149,14 +151,23 @@ export class FailurePredictionService {
     const entityGroups = this.groupByEntity(recentTransactions, entityType);
     const baselineGroups = this.groupByEntity(baselineTransactions, entityType);
 
+    this.logger.debug(
+      `Analyzing ${entityGroups.size} ${entityType} entities. Recent txs: ${recentTransactions.length}, Baseline txs: ${baselineTransactions.length}, Min sample size: ${minSampleSize}`,
+    );
+
     // Obtener nombres de entidades
     const entityNames = await this.getEntityNames(
       entityType,
       Array.from(entityGroups.keys()),
     );
 
+    let skippedCount = 0;
     for (const [entityId, transactions] of entityGroups.entries()) {
       if (transactions.length < minSampleSize) {
+        skippedCount++;
+        this.logger.debug(
+          `Skipping ${entityType} ${entityId} - insufficient samples: ${transactions.length} < ${minSampleSize}`,
+        );
         continue;
       }
 
@@ -172,6 +183,12 @@ export class FailurePredictionService {
       );
 
       predictions.push(prediction);
+    }
+
+    if (skippedCount > 0) {
+      this.logger.warn(
+        `Skipped ${skippedCount} ${entityType} entities due to insufficient sample size`,
+      );
     }
 
     return predictions;
@@ -683,6 +700,126 @@ ${prediction.recommended_actions.join('\n')}`,
         ...this.defaultConfig.normalization,
         ...config.normalization,
       },
+    };
+  }
+
+  /**
+   * Obtiene el Top 3 de entidades con mayor probabilidad de caída
+   */
+  async getTop3ByEntityType(
+    entityType: 'merchant' | 'provider' | 'method',
+    query?: Partial<QueryPredictionDto>,
+  ): Promise<TopRiskyEntity[]> {
+    const predictions = await this.getPredictions({
+      entity_type: entityType,
+      time_window_minutes: query?.time_window_minutes || 60,
+      baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
+      min_sample_size: query?.min_sample_size || 1,
+      include_low_risk: false,
+    });
+
+    // Ordenar por probabilidad descendente y tomar top 3
+    const top3Predictions = predictions.predictions
+      .sort((a, b) => b.probability - a.probability)
+      .slice(0, 3);
+
+    // Mapear a formato TopRiskyEntity
+    return top3Predictions.map((pred, index) => this.mapToTopRiskyEntity(pred, index + 1));
+  }
+
+  /**
+   * Obtiene el Top 3 general (todas las entidades combinadas)
+   */
+  async getOverallTop3(
+    query?: Partial<QueryPredictionDto>,
+  ): Promise<TopRiskyEntity[]> {
+    // Obtener predicciones de todas las entidades
+    const [merchantPredictions, providerPredictions, methodPredictions] = await Promise.all([
+      this.getPredictions({
+        entity_type: 'merchant',
+        time_window_minutes: query?.time_window_minutes || 60,
+        baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
+        min_sample_size: query?.min_sample_size || 1,
+        include_low_risk: false,
+      }),
+      this.getPredictions({
+        entity_type: 'provider',
+        time_window_minutes: query?.time_window_minutes || 60,
+        baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
+        min_sample_size: query?.min_sample_size || 1,
+        include_low_risk: false,
+      }),
+      this.getPredictions({
+        entity_type: 'method',
+        time_window_minutes: query?.time_window_minutes || 60,
+        baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
+        min_sample_size: query?.min_sample_size || 1,
+        include_low_risk: false,
+      }),
+    ]);
+
+    // Combinar todas las predicciones
+    const allPredictions = [
+      ...merchantPredictions.predictions,
+      ...providerPredictions.predictions,
+      ...methodPredictions.predictions,
+    ];
+
+    // Ordenar por probabilidad descendente y tomar top 3
+    const top3Predictions = allPredictions
+      .sort((a, b) => b.probability - a.probability)
+      .slice(0, 3);
+
+    return top3Predictions.map((pred, index) => this.mapToTopRiskyEntity(pred, index + 1));
+  }
+
+  /**
+   * Obtiene el Top 3 completo (por categoría y general)
+   */
+  async getTop3Summary(
+    query?: Partial<QueryPredictionDto>,
+  ): Promise<Top3Summary> {
+    const [topMerchants, topProviders, topMethods, overallTop3] = await Promise.all([
+      this.getTop3ByEntityType('merchant', query),
+      this.getTop3ByEntityType('provider', query),
+      this.getTop3ByEntityType('method', query),
+      this.getOverallTop3(query),
+    ]);
+
+    return {
+      top_merchants: topMerchants,
+      top_providers: topProviders,
+      top_methods: topMethods,
+      overall_top_3: overallTop3,
+      timestamp: new Date(),
+    };
+  }
+
+  /**
+   * Mapea una predicción a formato TopRiskyEntity
+   */
+  private mapToTopRiskyEntity(
+    prediction: FailureProbability,
+    rank: number,
+  ): TopRiskyEntity {
+    // Extraer métricas de las señales
+    const errorRateSignal = prediction.signals.find(s => s.name === 'error_rate');
+    const approvalRateSignal = prediction.signals.find(s => s.name === 'approval_rate');
+    const latencySignal = prediction.signals.find(s => s.name === 'latency');
+
+    return {
+      rank,
+      entity_type: prediction.entity_type,
+      entity_id: prediction.entity_id,
+      entity_name: prediction.entity_name,
+      probability: prediction.probability,
+      risk_level: prediction.risk_level,
+      error_rate: errorRateSignal?.value || 0,
+      approval_rate: approvalRateSignal?.value || 0,
+      latency: latencySignal?.value || 0,
+      trend: prediction.trend.direction,
+      sample_size: prediction.sample_size,
+      timestamp: prediction.timestamp,
     };
   }
 }
