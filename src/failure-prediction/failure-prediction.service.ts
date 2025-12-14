@@ -458,49 +458,47 @@ export class FailurePredictionService {
         switch (criticalSignal.name) {
           case 'error_rate':
             recommendations.push(
-              'Revisar logs de errores para identificar patrón de fallos',
+              'Review error logs to identify failure patterns',
             );
             recommendations.push(
-              'Verificar conectividad con el proveedor de pagos',
+              'Verify connectivity with the payment provider',
             );
             if (entityType === 'provider') {
-              recommendations.push('Considerar activar provider de respaldo');
+              recommendations.push('Consider enabling a backup provider');
             }
             break;
           case 'latency':
-            recommendations.push('Investigar degradación de performance');
-            recommendations.push('Revisar configuración de timeouts');
-            recommendations.push('Verificar carga del sistema');
+            recommendations.push('Investigate performance degradation');
+            recommendations.push('Review timeout configuration');
+            recommendations.push('Check system load');
             break;
           case 'approval_rate':
-            recommendations.push(
-              'Analizar razones de rechazo de transacciones',
-            );
-            recommendations.push('Revisar configuración de reglas de negocio');
+            recommendations.push('Analyze transaction rejection reasons');
+            recommendations.push('Review business rule configuration');
             if (entityType === 'method') {
               recommendations.push(
-                'Evaluar método de pago alternativo para este segmento',
+                'Evaluate an alternative payment method for this segment',
               );
             }
             break;
           case 'trend':
             recommendations.push(
-              'Monitorear de cerca - tendencia de degradación detectada',
+              'Closely monitor — degradation trend detected',
             );
-            recommendations.push('Preparar plan de contingencia');
+            recommendations.push('Prepare a contingency plan');
             break;
         }
       }
 
       if (riskLevel === RiskLevel.CRITICAL) {
-        recommendations.unshift('🚨 ACCIÓN INMEDIATA REQUERIDA');
+        recommendations.unshift('🚨 IMMEDIATE ACTION REQUIRED');
         if (entityType === 'provider') {
-          recommendations.push('Considerar failover automático');
+          recommendations.push('Consider automatic failover');
         }
       }
     } else if (riskLevel === RiskLevel.MEDIUM) {
-      recommendations.push('Mantener bajo observación');
-      recommendations.push('Incrementar frecuencia de monitoreo');
+      recommendations.push('Keep under observation');
+      recommendations.push('Increase monitoring frequency');
     }
 
     return recommendations;
@@ -724,7 +722,9 @@ ${prediction.recommended_actions.join('\n')}`,
       .slice(0, 3);
 
     // Mapear a formato TopRiskyEntity
-    return top3Predictions.map((pred, index) => this.mapToTopRiskyEntity(pred, index + 1));
+    return top3Predictions.map((pred, index) =>
+      this.mapToTopRiskyEntity(pred, index + 1),
+    );
   }
 
   /**
@@ -734,29 +734,30 @@ ${prediction.recommended_actions.join('\n')}`,
     query?: Partial<QueryPredictionDto>,
   ): Promise<TopRiskyEntity[]> {
     // Obtener predicciones de todas las entidades
-    const [merchantPredictions, providerPredictions, methodPredictions] = await Promise.all([
-      this.getPredictions({
-        entity_type: 'merchant',
-        time_window_minutes: query?.time_window_minutes || 60,
-        baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
-        min_sample_size: query?.min_sample_size || 1,
-        include_low_risk: false,
-      }),
-      this.getPredictions({
-        entity_type: 'provider',
-        time_window_minutes: query?.time_window_minutes || 60,
-        baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
-        min_sample_size: query?.min_sample_size || 1,
-        include_low_risk: false,
-      }),
-      this.getPredictions({
-        entity_type: 'method',
-        time_window_minutes: query?.time_window_minutes || 60,
-        baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
-        min_sample_size: query?.min_sample_size || 1,
-        include_low_risk: false,
-      }),
-    ]);
+    const [merchantPredictions, providerPredictions, methodPredictions] =
+      await Promise.all([
+        this.getPredictions({
+          entity_type: 'merchant',
+          time_window_minutes: query?.time_window_minutes || 60,
+          baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
+          min_sample_size: query?.min_sample_size || 1,
+          include_low_risk: false,
+        }),
+        this.getPredictions({
+          entity_type: 'provider',
+          time_window_minutes: query?.time_window_minutes || 60,
+          baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
+          min_sample_size: query?.min_sample_size || 1,
+          include_low_risk: false,
+        }),
+        this.getPredictions({
+          entity_type: 'method',
+          time_window_minutes: query?.time_window_minutes || 60,
+          baseline_window_hours: query?.baseline_window_hours || 168, // 7 días
+          min_sample_size: query?.min_sample_size || 1,
+          include_low_risk: false,
+        }),
+      ]);
 
     // Combinar todas las predicciones
     const allPredictions = [
@@ -770,7 +771,9 @@ ${prediction.recommended_actions.join('\n')}`,
       .sort((a, b) => b.probability - a.probability)
       .slice(0, 3);
 
-    return top3Predictions.map((pred, index) => this.mapToTopRiskyEntity(pred, index + 1));
+    return top3Predictions.map((pred, index) =>
+      this.mapToTopRiskyEntity(pred, index + 1),
+    );
   }
 
   /**
@@ -779,12 +782,13 @@ ${prediction.recommended_actions.join('\n')}`,
   async getTop3Summary(
     query?: Partial<QueryPredictionDto>,
   ): Promise<Top3Summary> {
-    const [topMerchants, topProviders, topMethods, overallTop3] = await Promise.all([
-      this.getTop3ByEntityType('merchant', query),
-      this.getTop3ByEntityType('provider', query),
-      this.getTop3ByEntityType('method', query),
-      this.getOverallTop3(query),
-    ]);
+    const [topMerchants, topProviders, topMethods, overallTop3] =
+      await Promise.all([
+        this.getTop3ByEntityType('merchant', query),
+        this.getTop3ByEntityType('provider', query),
+        this.getTop3ByEntityType('method', query),
+        this.getOverallTop3(query),
+      ]);
 
     return {
       top_merchants: topMerchants,
@@ -803,9 +807,13 @@ ${prediction.recommended_actions.join('\n')}`,
     rank: number,
   ): TopRiskyEntity {
     // Extraer métricas de las señales
-    const errorRateSignal = prediction.signals.find(s => s.name === 'error_rate');
-    const approvalRateSignal = prediction.signals.find(s => s.name === 'approval_rate');
-    const latencySignal = prediction.signals.find(s => s.name === 'latency');
+    const errorRateSignal = prediction.signals.find(
+      (s) => s.name === 'error_rate',
+    );
+    const approvalRateSignal = prediction.signals.find(
+      (s) => s.name === 'approval_rate',
+    );
+    const latencySignal = prediction.signals.find((s) => s.name === 'latency');
 
     return {
       rank,

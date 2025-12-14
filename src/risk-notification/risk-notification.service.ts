@@ -193,7 +193,7 @@ export class RiskNotificationService {
     // Crear alerta
     const alert = await this.alertService.create({
       severity: this.mapRiskToSeverity(entity.risk_level),
-      title: `⚠️ Riesgo ${entity.risk_level.toUpperCase()} detectado: ${entity.entity_name}`,
+      title: `⚠️ Risk ${entity.risk_level.toUpperCase()} detected: ${entity.entity_name}`,
       explanation: this.buildAlertExplanation(entity),
       merchant_id:
         entity.entity_type === 'merchant' ? entity.entity_id : undefined,
@@ -224,7 +224,7 @@ export class RiskNotificationService {
     await this.sendGuardNotification(guardUser, alert, riskNotification);
 
     this.logger.log(
-      `✉️ Guardia notificado: ${guardUser.name} (${guardUser.email})`,
+      `✉️ Guard notified: ${guardUser.name} (${guardUser.email})`,
     );
   }
 
@@ -236,7 +236,7 @@ export class RiskNotificationService {
     alert: any,
     riskNotification: RiskNotification,
   ) {
-    const subject = `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`;
+    const subject = `🚨 [GUARD] Risk ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`;
     const emailBody = this.buildGuardEmailBody(riskNotification, guardUser);
 
     // 1) EMAIL (como ya lo tienes)
@@ -360,7 +360,7 @@ export class RiskNotificationService {
       // Crear nueva alerta
       const alert = await this.alertService.create({
         severity: this.mapRiskToSeverity(notification.risk_level),
-        title: `⚠️ [RECORDATORIO ${notification.guard_attempts}] Riesgo ${notification.risk_level.toUpperCase()}: ${notification.entity_name}`,
+        title: `⚠️ [REMINDER ${notification.guard_attempts}] Risk ${notification.risk_level.toUpperCase()}: ${notification.entity_name}`,
         explanation: `Este es el intento ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}.\n\nSi no se recibe respuesta, se escalará automáticamente a todo el equipo.`,
       });
 
@@ -409,10 +409,10 @@ export class RiskNotificationService {
 
     const alert = await this.alertService.create({
       severity: AlertSeverity.CRITICAL,
-      title: `🚨 [ESCALADO] Riesgo CRÍTICO: ${riskNotification!.entity_name}`,
+      title: `🚨 [ESCALATED] CRITICAL Risk: ${riskNotification!.entity_name}`,
       explanation:
-        `Esta alerta fue escalada automáticamente después de ${riskNotification!.guard_attempts} intentos sin respuesta del guardia.\n\n` +
-        `Se requiere atención inmediata de todo el equipo.`,
+        `This alert was automatically escalated after ${riskNotification!.guard_attempts} unanswered on-call guard attempts.\n\n` +
+        `Immediate attention from the entire team is required.`,
     });
 
     // Canales
@@ -429,10 +429,10 @@ export class RiskNotificationService {
       return;
     }
 
-    const emailSubject = `🚨 [CRÍTICO] Riesgo detectado: ${riskNotification!.entity_name}`;
+    const emailSubject = `🚨 [CRITICAL] Risk detected: ${riskNotification!.entity_name}`;
     const emailBody = this.buildEscalatedEmailBody(riskNotification!);
 
-    const waSubject = `🚨 [CRÍTICO] ${riskNotification!.entity_name}`;
+    const waSubject = `🚨 [CRITICAL] ${riskNotification!.entity_name}`;
     const waBody = this.buildEscalatedWhatsAppBody(riskNotification!);
 
     for (const user of yunoUsers) {
@@ -614,13 +614,13 @@ export class RiskNotificationService {
   ): string {
     const metadata = notification.metadata || {};
 
-    const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'; // pon tu puerto real
+    const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'; // set your real port
 
     const propagateUrl = `${BACKEND_URL}/risk-notifications/${notification.id}/propagate`;
     const dismissUrl =
       `${BACKEND_URL}/risk-notifications/${notification.id}/dismiss` +
       `?user_id=${encodeURIComponent(guardUser.id)}` +
-      `&reason=${encodeURIComponent('Falso positivo')}`;
+      `&reason=${encodeURIComponent('False positive')}`;
 
     return `
 
@@ -646,13 +646,13 @@ export class RiskNotificationService {
 <body>
   <div class="container">
     <div class="header">
-      <h2>🚨 ALERTA DE RIESGO - Acción Requerida</h2>
+      <h2>🚨 RISK ALERT - Action Required</h2>
     </div>
     
     <div class="content">
-      <p>Hola <strong>${guardUser.name}</strong>,</p>
+      <p>Hello <strong>${guardUser.name}</strong>,</p>
       
-      <p>Se ha detectado un riesgo en el sistema que requiere tu atención como guardia de turno:</p>
+      <p>A risk has been detected in the system that requires your attention as the on-call guard:</p>
       
       <h3>
         <span class="risk-badge risk-${notification.risk_level}">
@@ -661,18 +661,18 @@ export class RiskNotificationService {
         ${notification.entity_name}
       </h3>
       
-      <p><strong>Tipo:</strong> ${notification.entity_type}</p>
-      <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
-      <p><strong>Intento:</strong> ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}</p>
+      <p><strong>Type:</strong> ${notification.entity_type}</p>
+      <p><strong>Failure probability:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
+      <p><strong>Attempt:</strong> ${notification.guard_attempts} of ${this.MAX_GUARD_ATTEMPTS}</p>
       
       ${
         metadata.baseline_comparison
           ? `
-      <h4>📊 Comparación vs Baseline:</h4>
+      <h4>📊 Baseline comparison:</h4>
       <ul>
-        <li>Tasa de error actual: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%</li>
-        <li>Tasa de error baseline: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%</li>
-        <li>Desviación: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%</li>
+        <li>Current error rate: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%</li>
+        <li>Baseline error rate: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%</li>
+        <li>Deviation: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%</li>
       </ul>
       `
           : ''
@@ -681,8 +681,8 @@ export class RiskNotificationService {
       ${
         metadata.trend
           ? `
-      <h4>📈 Tendencia:</h4>
-      <p>Dirección: <strong>${metadata.trend.direction}</strong></p>
+      <h4>📈 Trend:</h4>
+      <p>Direction: <strong>${metadata.trend.direction}</strong></p>
       `
           : ''
       }
@@ -690,7 +690,7 @@ export class RiskNotificationService {
       ${
         metadata.recommended_actions
           ? `
-      <h4>💡 Acciones Recomendadas:</h4>
+      <h4>💡 Recommended actions:</h4>
       <ul>
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
@@ -699,18 +699,18 @@ export class RiskNotificationService {
       }
       
       <div class="actions">
-        <h4>⚡ Dirigete a la aplicación para decidir que hacer</h4>
+        <h4>⚡ Go to the application to decide what to do</h4>
         
         <p style="color: #f44336; font-weight: bold;">
-          ⏰ Si no respondes en ${this.GUARD_NOTIFICATION_INTERVAL_MINUTES} minutos, se enviará otro recordatorio.
-          Después de ${this.MAX_GUARD_ATTEMPTS} intentos, se escalará automáticamente a todo el equipo.
+          ⏰ If you don't respond within ${this.GUARD_NOTIFICATION_INTERVAL_MINUTES} minutes, another reminder will be sent.
+          After ${this.MAX_GUARD_ATTEMPTS} attempts, it will be automatically escalated to the entire team.
         </p>
       </div>
     </div>
     
     <div class="footer">
-      <p>Este es un mensaje automático del Sistema de Predicción de Fallos de Yuno.</p>
-      <p>Intento ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}</p>
+      <p>This is an automated message from Yuno's Failure Prediction System.</p>
+      <p>Attempt ${notification.guard_attempts} of ${this.MAX_GUARD_ATTEMPTS}</p>
     </div>
   </div>
 </body>
@@ -739,25 +739,25 @@ export class RiskNotificationService {
 <body>
   <div class="container">
     <div class="header">
-      <h2>🚨 ALERTA CRÍTICA ESCALADA</h2>
+      <h2>🚨 CRITICAL ALERT ESCALATED</h2>
     </div>
     
     <div class="content">
       <div class="alert-box">
-        <h3>⚠️ ATENCIÓN INMEDIATA REQUERIDA</h3>
-        <p>Esta alerta fue escalada automáticamente después de ${notification.guard_attempts} intentos sin respuesta del guardia de turno.</p>
+        <h3>⚠️ IMMEDIATE ATTENTION REQUIRED</h3>
+        <p>This alert was automatically escalated after ${notification.guard_attempts} unanswered on-call guard attempts.</p>
       </div>
       
-      <h3>Entidad en Riesgo: ${notification.entity_name}</h3>
+      <h3>Entity at Risk: ${notification.entity_name}</h3>
       
-      <p><strong>Tipo:</strong> ${notification.entity_type}</p>
-      <p><strong>Nivel de Riesgo:</strong> ${notification.risk_level.toUpperCase()}</p>
-      <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
+      <p><strong>Type:</strong> ${notification.entity_type}</p>
+      <p><strong>Risk Level:</strong> ${notification.risk_level.toUpperCase()}</p>
+      <p><strong>Failure probability:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
       
       ${
         metadata.recommended_actions
           ? `
-      <h4>💡 Acciones Recomendadas:</h4>
+      <h4>💡 Recommended actions:</h4>
       <ul>
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
@@ -766,7 +766,7 @@ export class RiskNotificationService {
       }
       
       <p style="margin-top: 20px;">
-        ⚡ Dirigete a la aplicación para decidir que hacer
+        ⚡ Go to the application to decide what to do
       </p>
     </div>
   </div>
@@ -780,14 +780,14 @@ export class RiskNotificationService {
    */
   private buildAlertExplanation(entity: FailureProbability): string {
     return `
-Probabilidad de fallo: ${(entity.probability * 100).toFixed(1)}%
-Tasa de error actual: ${(entity.baseline_comparison.current_error_rate * 100).toFixed(2)}%
-Tasa de error baseline: ${(entity.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%
-Tendencia: ${entity.trend.direction}
+Failure probability: ${(entity.probability * 100).toFixed(1)}%
+Current error rate: ${(entity.baseline_comparison.current_error_rate * 100).toFixed(2)}%
+Baseline error rate: ${(entity.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%
+Trend: ${entity.trend.direction}
 
-Acciones recomendadas:
+Recommended actions:
 ${entity.recommended_actions.join('\n')}
-    `.trim();
+  `.trim();
   }
 
   /**
@@ -820,35 +820,35 @@ ${entity.recommended_actions.join('\n')}
 
     const lines: string[] = [];
 
-    lines.push('🚨 *ALERTA CRÍTICA ESCALADA*');
+    lines.push('🚨 *CRITICAL ALERT ESCALATED*');
     lines.push('');
-    lines.push('⚠️ *ATENCIÓN INMEDIATA REQUERIDA*');
+    lines.push('⚠️ *IMMEDIATE ATTENTION REQUIRED*');
     lines.push(
-      `Esta alerta fue escalada automáticamente después de ${notification.guard_attempts} intentos sin respuesta del guardia de turno.`,
+      `This alert was automatically escalated after ${notification.guard_attempts} unanswered on-call guard attempts.`,
     );
     lines.push('');
 
-    lines.push(`*Entidad en Riesgo:* ${notification.entity_name}`);
-    lines.push(`*Tipo:* ${notification.entity_type}`);
+    lines.push(`*Entity at Risk:* ${notification.entity_name}`);
+    lines.push(`*Type:* ${notification.entity_type}`);
     lines.push(
-      `*Nivel de Riesgo:* ${String(notification.risk_level).toUpperCase()}`,
+      `*Risk Level:* ${String(notification.risk_level).toUpperCase()}`,
     );
     lines.push(
-      `*Probabilidad de fallo:* ${(notification.probability * 100).toFixed(1)}%`,
+      `*Failure probability:* ${(notification.probability * 100).toFixed(1)}%`,
     );
 
     if (metadata.recommended_actions?.length) {
       lines.push('');
-      lines.push('💡 *Acciones Recomendadas:*');
+      lines.push('💡 *Recommended actions:*');
       for (const action of metadata.recommended_actions as string[]) {
         lines.push(`• ${action}`);
       }
     }
 
     lines.push('');
-    lines.push('⚡ Dirígete a la aplicación para decidir qué hacer.');
+    lines.push('⚡ Go to the application to decide what to do.');
 
-    // WhatsApp tiene límite ~1600 chars (y tu canal ya trunca). Igual, mejor no pasarse:
+    // WhatsApp has a ~1600 char limit (and your channel already truncates). Keep it safe:
     return lines.join('\n').slice(0, 1600);
   }
 
@@ -859,48 +859,48 @@ ${entity.recommended_actions.join('\n')}
     const metadata = notification.metadata || {};
 
     const lines: string[] = [];
-    lines.push('🚨 *ALERTA DE RIESGO - Acción requerida*');
+    lines.push('🚨 *RISK ALERT - Action required*');
     lines.push('');
-    lines.push(`Hola *${guardUser.name}*,`);
+    lines.push(`Hi *${guardUser.name}*,`);
     lines.push(
-      'Se detectó un riesgo que requiere tu atención como guardia de turno:',
+      'A risk has been detected that requires your attention as the on-call guard:',
     );
     lines.push('');
 
     lines.push(
       `*${String(notification.risk_level).toUpperCase()}* — ${notification.entity_name}`,
     );
-    lines.push(`*Tipo:* ${notification.entity_type}`);
+    lines.push(`*Type:* ${notification.entity_type}`);
     lines.push(
-      `*Probabilidad de fallo:* ${(notification.probability * 100).toFixed(1)}%`,
+      `*Failure probability:* ${(notification.probability * 100).toFixed(1)}%`,
     );
     lines.push(
-      `*Intento:* ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}`,
+      `*Attempt:* ${notification.guard_attempts} of ${this.MAX_GUARD_ATTEMPTS}`,
     );
 
     if (metadata.baseline_comparison) {
       lines.push('');
-      lines.push('📊 *Comparación vs Baseline:*');
+      lines.push('📊 *Baseline comparison:*');
       lines.push(
-        `• Error actual: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%`,
+        `• Current error rate: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%`,
       );
       lines.push(
-        `• Error baseline: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%`,
+        `• Baseline error rate: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%`,
       );
       lines.push(
-        `• Desviación: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%`,
+        `• Deviation: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%`,
       );
     }
 
     if (metadata.trend) {
       lines.push('');
-      lines.push('📈 *Tendencia:*');
-      lines.push(`• Dirección: *${metadata.trend.direction}*`);
+      lines.push('📈 *Trend:*');
+      lines.push(`• Direction: *${metadata.trend.direction}*`);
     }
 
     if (metadata.recommended_actions?.length) {
       lines.push('');
-      lines.push('💡 *Acciones Recomendadas:*');
+      lines.push('💡 *Recommended actions:*');
       for (const action of metadata.recommended_actions as string[]) {
         lines.push(`• ${action}`);
       }
@@ -908,7 +908,7 @@ ${entity.recommended_actions.join('\n')}
 
     lines.push('');
     lines.push(
-      `⏰ Si no respondes en ${this.GUARD_NOTIFICATION_INTERVAL_MINUTES} minutos, se enviará otro recordatorio. Después de ${this.MAX_GUARD_ATTEMPTS} intentos, se escalará automáticamente.`,
+      `⏰ If you don't respond within ${this.GUARD_NOTIFICATION_INTERVAL_MINUTES} minutes, another reminder will be sent. After ${this.MAX_GUARD_ATTEMPTS} attempts, it will be escalated automatically.`,
     );
 
     return lines.join('\n').slice(0, 1600);
