@@ -64,7 +64,7 @@ export class RiskNotificationService {
    * Cron job principal - Ejecuta cada 5 minutos
    * Revisa predicciones y gestiona notificaciones
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_MINUTE)
   async checkAndNotifyRisks() {
     this.logger.log('🔍 Iniciando revisión periódica de riesgos...');
 
