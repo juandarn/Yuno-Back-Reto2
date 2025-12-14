@@ -119,8 +119,18 @@ export class SeedService {
       // 3) Users
       // ------------------------------------------------------------------
       const yunoUsers = await userRepo.save([
-        { email: 'j.manriquec@uniandes.edu.co', name: 'Yuno Admin', type: 'YUNO', active: true },
-        { email: 'support@yuno.com', name: 'Yuno Support', type: 'YUNO', active: true },
+        {
+          email: 'j.manriquec@uniandes.edu.co',
+          name: 'Yuno Admin',
+          type: 'YUNO',
+          active: true,
+        },
+        {
+          email: 'support@yuno.com',
+          name: 'Yuno Support',
+          type: 'YUNO',
+          active: true,
+        },
       ]);
 
       const merchantUsers: User[] = [];
@@ -142,7 +152,7 @@ export class SeedService {
       // ------------------------------------------------------------------
       const onCallRepo = runner.manager.getRepository(OnCallSchedule);
       const nowOnCall = new Date();
-      
+
       // Prioridad 1: primer usuario interno (si existe)
       if (yunoUsers?.length) {
         const schedules: Partial<OnCallSchedule>[] = [
@@ -172,14 +182,17 @@ export class SeedService {
       // ------------------------------------------------------------------
       const channels = await channelRepo.save([
         {
-          name: 'gmail',  // ✅ Cambiado de 'email' a 'gmail'
-          activo: true,  // ✅ USAR 'activo' (español) según la entidad
+          name: 'gmail', // ✅ Cambiado de 'email' a 'gmail'
+          activo: true, // ✅ USAR 'activo' (español) según la entidad
           config: { from: 'noreply@yuno-hackaton.local' },
         },
         {
           name: 'slack',
-          activo: true,  // ✅ USAR 'activo' (español) según la entidad
-          config: { webhookUrl: 'https://example.com/fake-slack-webhook', channel: '#alerts' },
+          activo: true, // ✅ USAR 'activo' (español) según la entidad
+          config: {
+            webhookUrl: 'https://example.com/fake-slack-webhook',
+            channel: '#alerts',
+          },
         },
       ]);
 
@@ -217,7 +230,8 @@ export class SeedService {
       // ESCENARIO 1: OK - Shopito -> Stripe -> Tarjeta -> CO
       for (let i = 0; i < 150; i++) {
         const date = new Date(now.getTime() - randInt(1, 60) * 60000);
-        const status = Math.random() < 0.95 ? TxStatus.APPROVED : TxStatus.DECLINED;
+        const status =
+          Math.random() < 0.95 ? TxStatus.APPROVED : TxStatus.DECLINED;
 
         txsToInsert.push(
           makeTx({
@@ -311,7 +325,8 @@ export class SeedService {
       // ESCENARIO 4: misma ruta pero OK en México (contraste)
       for (let i = 0; i < 120; i++) {
         const date = new Date(now.getTime() - randInt(1, 60) * 60000);
-        const status = Math.random() < 0.92 ? TxStatus.APPROVED : TxStatus.DECLINED;
+        const status =
+          Math.random() < 0.92 ? TxStatus.APPROVED : TxStatus.DECLINED;
 
         txsToInsert.push(
           makeTx({
@@ -336,7 +351,10 @@ export class SeedService {
       for (const route of additionalRoutes) {
         for (let i = 0; i < 80; i++) {
           const date = new Date(now.getTime() - randInt(1, 60) * 60000);
-          const status = Math.random() < route.approval ? TxStatus.APPROVED : TxStatus.DECLINED;
+          const status =
+            Math.random() < route.approval
+              ? TxStatus.APPROVED
+              : TxStatus.DECLINED;
 
           txsToInsert.push(
             makeTx({
@@ -359,7 +377,10 @@ export class SeedService {
       // ------------------------------------------------------------------
       const byDay = new Map<string, Transaction[]>();
       for (const t of insertedTxs) {
-        const d: Date = (t as any).date instanceof Date ? (t as any).date : new Date((t as any).date);
+        const d: Date =
+          (t as any).date instanceof Date
+            ? (t as any).date
+            : new Date((t as any).date);
         const dayKey = d.toISOString().slice(0, 10);
         if (!byDay.has(dayKey)) byDay.set(dayKey, []);
         byDay.get(dayKey)!.push(t);
@@ -374,18 +395,26 @@ export class SeedService {
         const end = new Date(`${dayKey}T23:59:59.999Z`);
 
         for (const m of merchants) {
-          const mTx = txs.filter(t => String((t as any).merchant_id) === String(m.id));
+          const mTx = txs.filter(
+            (t) => String((t as any).merchant_id) === String(m.id),
+          );
           if (!mTx.length) continue;
 
-          const approved = mTx.filter(t => (t as any).status === TxStatus.APPROVED).length;
+          const approved = mTx.filter(
+            (t) => (t as any).status === TxStatus.APPROVED,
+          ).length;
           const errors = mTx.filter(
-            t => (t as any).status === TxStatus.ERROR || (t as any).status === TxStatus.TIMEOUT,
+            (t) =>
+              (t as any).status === TxStatus.ERROR ||
+              (t as any).status === TxStatus.TIMEOUT,
           ).length;
 
           const approvalRate = approved / mTx.length;
           const errorRate = errors / mTx.length;
 
-          const latSorted = mTx.map(t => Number((t as any).latency_ms)).sort((a, b) => a - b);
+          const latSorted = mTx
+            .map((t) => Number((t as any).latency_ms))
+            .sort((a, b) => a - b);
           const p95 = percentile(latSorted, 95);
 
           const metrics = metricRepo.create([
@@ -418,7 +447,8 @@ export class SeedService {
           const savedMetrics = await metricRepo.save(metrics as any);
 
           if (errorRate >= TH_ERROR_RATE_WARNING) {
-            const severity = errorRate >= TH_ERROR_RATE_CRIT ? 'critical' : 'warning';
+            const severity =
+              errorRate >= TH_ERROR_RATE_CRIT ? 'critical' : 'warning';
             const title = `High error rate for merchant ${m.name}`;
             const explanation =
               `Window: ${dayKey}\n` +
@@ -426,7 +456,9 @@ export class SeedService {
               `sample=${mTx.length}`;
 
             const metricForAlert =
-              (savedMetrics as any[]).find(mt => (mt as any).type === 'error_rate') ?? (savedMetrics as any[])[0];
+              (savedMetrics as any[]).find(
+                (mt) => (mt as any).type === 'error_rate',
+              ) ?? (savedMetrics as any[])[0];
 
             // ✅ USAR NOMBRES SEGÚN LA ENTIDAD ACTUAL
             // Verifica tu Alert entity para saber si usa español o inglés
@@ -471,7 +503,8 @@ export class SeedService {
           ok_routes: 4,
           warning_routes: 1,
           critical_routes: 3,
-          description: 'Datos generados para demostrar health-graph con escenarios específicos',
+          description:
+            'Datos generados para demostrar health-graph con escenarios específicos',
         },
         endpoint: 'POST /seed',
       };

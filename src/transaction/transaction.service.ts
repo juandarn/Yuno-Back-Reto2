@@ -5,12 +5,30 @@ import { Transaction } from './entities/transaction.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { TxStatus } from '../common/enums';
+import { Merchant } from '../merchant/entities/merchant.entity';
+import { Provider } from '../provider/entities/provider.entity';
+import { PaymentMethod } from '../payment-method/entities/payment-method.entity';
+import { Country } from '../country/entities/country.entity';
+import type {
+  OptionsTreeResponse,
+  OptionsRow,
+  MerchantBucket,
+  ProviderBucket,
+  MethodBucket,
+  MerchantOption,
+  CountryOption,
+} from './dto/transaction-options-tree.dto';
 
 @Injectable()
 export class TransactionService {
   constructor(
     @InjectRepository(Transaction)
     private transactionsRepository: Repository<Transaction>,
+    @InjectRepository(Merchant) private merchantRepo: Repository<Merchant>,
+    @InjectRepository(Provider) private providerRepo: Repository<Provider>,
+    @InjectRepository(PaymentMethod)
+    private methodRepo: Repository<PaymentMethod>,
+    @InjectRepository(Country) private countryRepo: Repository<Country>,
   ) {}
 
   async create(
@@ -429,5 +447,90 @@ export class TransactionService {
       weeks_history: weeksHistory,
       series,
     };
+  }
+
+  async getTransactionOptionsTree(): Promise<OptionsTreeResponse> {
+    const rows = await this.transactionsRepository
+      .createQueryBuilder('tx')
+      .innerJoin('tx.merchant', 'm')
+      .innerJoin('tx.provider', 'p')
+      .innerJoin('tx.method', 'pm')
+      .innerJoin('tx.country', 'c')
+      .select([
+        'm.id AS merchant_id',
+        'm.name AS merchant_name',
+        'p.id AS provider_id',
+        'p.name AS provider_name',
+        'pm.id AS method_id',
+        'pm.name AS method_name',
+        'c.code AS country_code',
+        'c.name AS country_name',
+      ])
+      .distinct(true)
+      .getRawMany<OptionsRow>();
+
+    const merchantMap = new Map<string, MerchantBucket>();
+
+    for (const r of rows) {
+      const mid = r.merchant_id;
+      const pid = Number(r.provider_id);
+      const methodId = Number(r.method_id);
+      const cc = r.country_code;
+
+      let merchant = merchantMap.get(mid);
+      if (!merchant) {
+        merchant = {
+          id: mid,
+          name: r.merchant_name,
+          providers: new Map<number, ProviderBucket>(),
+        };
+        merchantMap.set(mid, merchant);
+      }
+
+      let provider = merchant.providers.get(pid);
+      if (!provider) {
+        provider = {
+          id: pid,
+          name: r.provider_name,
+          methods: new Map<number, MethodBucket>(),
+        };
+        merchant.providers.set(pid, provider);
+      }
+
+      let method = provider.methods.get(methodId);
+      if (!method) {
+        method = {
+          id: methodId,
+          name: r.method_name,
+          countries: new Map<string, CountryOption>(),
+        };
+        provider.methods.set(methodId, method);
+      }
+
+      if (!method.countries.has(cc)) {
+        method.countries.set(cc, { code: cc, name: r.country_name });
+      }
+    }
+
+    // OJO: aquí es donde te estaba saliendo unknown, por no tipar Map values
+    const merchants: MerchantOption[] = Array.from(merchantMap.values()).map(
+      (m: MerchantBucket) => ({
+        id: m.id,
+        name: m.name,
+        providers: Array.from(m.providers.values()).map(
+          (p: ProviderBucket) => ({
+            id: p.id,
+            name: p.name,
+            methods: Array.from(p.methods.values()).map((mm: MethodBucket) => ({
+              id: mm.id,
+              name: mm.name,
+              countries: Array.from(mm.countries.values()),
+            })),
+          }),
+        ),
+      }),
+    );
+
+    return { merchants };
   }
 }

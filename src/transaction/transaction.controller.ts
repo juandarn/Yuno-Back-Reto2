@@ -52,6 +52,11 @@ export class TransactionController {
     });
   }
 
+  @Get('options-tree')
+  getOptionsTree() {
+    return this.transactionService.getTransactionOptionsTree();
+  }
+
   @Get('merchant/:merchantId')
   findByMerchant(@Param('merchantId') merchantId: string) {
     return this.transactionService.findByMerchant(merchantId);

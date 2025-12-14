@@ -1,13 +1,5 @@
 // src/transactions/dto/approved-forecast.query.dto.ts
-import {
-  IsISO8601,
-  IsOptional,
-  IsUUID,
-  IsString,
-  IsInt,
-  Min,
-  MaxLength,
-} from 'class-validator';
+import { IsISO8601, IsOptional, IsUUID, IsString, IsInt } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ApprovedForecastQueryDto {
@@ -17,18 +9,15 @@ export class ApprovedForecastQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
   provider_id?: number;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
   method_id?: number;
 
   @IsOptional()
   @IsString()
-  @MaxLength(2)
   country_code?: string;
 
   @IsISO8601()
