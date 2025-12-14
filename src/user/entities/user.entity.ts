@@ -1,5 +1,12 @@
 // src/users/entities/user.entity.ts
-import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+} from 'typeorm';
 import { Merchant } from '../../merchant/entities/merchant.entity';
 import { Notification } from '../../notification/entities/notification.entity';
 
@@ -10,6 +17,9 @@ export class User {
 
   @Column({ type: 'text' })
   email: string;
+
+  @Column({ type: 'text' })
+  number: string;
 
   @Column({ type: 'text' })
   name: string;
@@ -28,6 +38,6 @@ export class User {
   @JoinColumn({ name: 'merchant_id' })
   merchant: Merchant;
 
-  @OneToMany(() => Notification, notification => notification.user)
+  @OneToMany(() => Notification, (notification) => notification.user)
   notifications: Notification[];
 }

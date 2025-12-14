@@ -32,6 +32,34 @@ export class RiskNotificationService {
     private alertService: AlertService,
   ) {}
 
+  async listMinimal(status?: string, page = 1, limit = 20) {
+    const qb = this.riskNotificationRepository
+      .createQueryBuilder('rn')
+      .select([
+        'rn.id',
+        'rn.entity_type',
+        'rn.entity_name',
+        'rn.risk_level',
+        'rn.status',
+      ]);
+
+    if (status) qb.where('rn.status = :status', { status });
+
+    qb.orderBy('rn.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    return {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+      items,
+    };
+  }
+
   /**
    * Cron job principal - Ejecuta cada 5 minutos
    * Revisa predicciones y gestiona notificaciones
@@ -44,14 +72,14 @@ export class RiskNotificationService {
       // 1. Obtener predicciones actuales
       const predictions = await this.failurePredictionService.getPredictions({
         entity_type: 'merchant',
-        time_window_minutes: 10080,
+        time_window_minutes: 10800,
         include_low_risk: false,
       });
 
       const providerPredictions =
         await this.failurePredictionService.getPredictions({
           entity_type: 'provider',
-          time_window_minutes: 10080,
+          time_window_minutes: 10800,
           include_low_risk: false,
         });
 
@@ -189,8 +217,6 @@ export class RiskNotificationService {
         recommended_actions: entity.recommended_actions,
       },
     });
-
-
 
     await this.riskNotificationRepository.save(riskNotification);
 
@@ -462,6 +488,9 @@ export class RiskNotificationService {
 
     this.logger.log(
       `✅ Escalación enviada a ${yunoUsers.length} usuarios (gmail/whatsapp)`,
+    );
+    this.logger.log(
+      `✅ Notificación escalada enviada a ${yunoUsers.length} empleados`,
     );
   }
 

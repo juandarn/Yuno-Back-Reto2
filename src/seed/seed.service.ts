@@ -132,11 +132,13 @@ export class SeedService {
         {
           email: 'j.manriquec@uniandes.edu.co',
           name: 'Yuno Admin',
+          number: '+573143901412',
           type: 'YUNO',
           active: true,
         },
         {
           email: 'support@yuno.com',
+          number: '+573143901412',
           name: 'Yuno Support',
           type: 'YUNO',
           active: true,
@@ -148,6 +150,7 @@ export class SeedService {
         merchantUsers.push(
           userRepo.create({
             email: `admin@${String(m.name).toLowerCase().replace(/\s+/g, '')}.com`,
+            number: '+573143901412',
             name: `${m.name} Admin`,
             type: 'MERCHANT',
             merchant_id: m.id,
@@ -196,6 +199,13 @@ export class SeedService {
           config: {
             webhookUrl: 'https://example.com/fake-slack-webhook',
             channel: '#alerts',
+          },
+        },
+        {
+          name: 'whatsapp',
+          activo: true,
+          config: {
+            from: '+573143901412',
           },
         },
       ]);

@@ -97,6 +97,8 @@ export class AlertService {
         onCallSchedule?.user?.id ?? (onCallSchedule as any)?.user_id;
       const onCallEmail =
         onCallSchedule?.user?.email ?? (onCallSchedule as any)?.user?.email;
+      const onCallNumber =
+        onCallSchedule?.user?.number ?? (onCallSchedule as any)?.user?.number;
 
       if (!onCallUserId) {
         this.logger.warn(
@@ -116,8 +118,10 @@ export class AlertService {
         } else if (channel.webhook) {
           channelType = 'webhook';
           recipient = channel.webhook;
+        } else if (channel.name === 'whatsapp') {
+          channelType = 'whatsapp';
+          recipient = onCallNumber as string;
         }
-
         // Crear la notificación en DB con IDs reales
         // Nota: aquí seguimos usando CreateNotificationDto tal como lo tienes (alerta_id/usuario_id/canal_id)
         const notification = await this.notificationsService.create({
@@ -137,9 +141,8 @@ export class AlertService {
           channelType,
           {
             to: recipient,
-            subject: `ALERTA ${alert.severity.toUpperCase()}: ${alert.title}`,
-            body:
-              alert.explanation || 'No hay detalles adicionales disponibles.',
+            subject: `ALERT ${alert.severity.toUpperCase()}: ${alert.title}`,
+            body: 'Check your email for more information.',
             metadata: {
               alertId: alert.id,
               metricId: alert.metric_id,

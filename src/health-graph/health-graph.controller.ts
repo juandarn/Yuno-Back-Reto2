@@ -1,6 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { HealthGraphService } from './health-graph.service';
-import { HealthGraphResponse, QueryHealthGraphDto } from './dto/health-graph.dto';
+import {
+  HealthGraphResponse,
+  QueryHealthGraphDto,
+} from './dto/health-graph.dto';
 
 @Controller('health-graph')
 export class HealthGraphController {

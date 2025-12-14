@@ -146,14 +146,8 @@ export class FailurePredictionService {
     const predictions: FailureProbability[] = [];
 
     // Agrupar transacciones por entidad
-    const entityGroups = this.groupByEntity(
-      recentTransactions,
-      entityType,
-    );
-    const baselineGroups = this.groupByEntity(
-      baselineTransactions,
-      entityType,
-    );
+    const entityGroups = this.groupByEntity(recentTransactions, entityType);
+    const baselineGroups = this.groupByEntity(baselineTransactions, entityType);
 
     // Obtener nombres de entidades
     const entityNames = await this.getEntityNames(
@@ -309,10 +303,13 @@ export class FailurePredictionService {
     signals.push(approvalSignal);
 
     // 4. Señal de tendencia (comparación contra baseline)
-    const errorTrend =
-      metrics.recent_error_rate - metrics.baseline_error_rate;
+    const errorTrend = metrics.recent_error_rate - metrics.baseline_error_rate;
     const trendDirection =
-      errorTrend > 0.05 ? 'degrading' : errorTrend < -0.05 ? 'improving' : 'stable';
+      errorTrend > 0.05
+        ? 'degrading'
+        : errorTrend < -0.05
+          ? 'improving'
+          : 'stable';
     const trendSignal: Signal = {
       name: 'trend',
       value: errorTrend,
@@ -323,7 +320,8 @@ export class FailurePredictionService {
       weight: config.weights.trend,
       contribution: 0,
     };
-    trendSignal.contribution = trendSignal.normalized_value * trendSignal.weight;
+    trendSignal.contribution =
+      trendSignal.normalized_value * trendSignal.weight;
     signals.push(trendSignal);
 
     // Calcular probabilidad final (función logística)
@@ -371,7 +369,7 @@ export class FailurePredictionService {
         baseline_error_rate: metrics.baseline_error_rate,
         deviation_percentage:
           metrics.baseline_error_rate > 0
-            ? ((errorTrend / metrics.baseline_error_rate) * 100)
+            ? (errorTrend / metrics.baseline_error_rate) * 100
             : 0,
       },
       trend: {
@@ -458,7 +456,9 @@ export class FailurePredictionService {
             recommendations.push('Verificar carga del sistema');
             break;
           case 'approval_rate':
-            recommendations.push('Analizar razones de rechazo de transacciones');
+            recommendations.push(
+              'Analizar razones de rechazo de transacciones',
+            );
             recommendations.push('Revisar configuración de reglas de negocio');
             if (entityType === 'method') {
               recommendations.push(
@@ -528,7 +528,8 @@ export class FailurePredictionService {
     predictions: FailureProbability[],
   ): Promise<void> {
     const highRiskPredictions = predictions.filter(
-      (p) => p.risk_level === RiskLevel.CRITICAL || p.risk_level === RiskLevel.HIGH,
+      (p) =>
+        p.risk_level === RiskLevel.CRITICAL || p.risk_level === RiskLevel.HIGH,
     );
 
     for (const prediction of highRiskPredictions) {
@@ -615,7 +616,8 @@ ${prediction.recommended_actions.join('\n')}`,
         break;
       }
       case 'method': {
-        const entities = await this.paymentMethodRepository.findByIds(entityIds);
+        const entities =
+          await this.paymentMethodRepository.findByIds(entityIds);
         entities.forEach((e) => names.set(e.id, e.name));
         break;
       }

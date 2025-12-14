@@ -1,9 +1,9 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Body, 
-  Param, 
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
   Delete,
   Patch,
   Query,
@@ -11,7 +11,11 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AlertService } from './alert.service';
-import { CreateAlertDto, UpdateAlertDto, AlertStatus } from './dto/create-alert.dto';
+import {
+  CreateAlertDto,
+  UpdateAlertDto,
+  AlertStatus,
+} from './dto/create-alert.dto';
 
 @Controller('alerts')
 export class AlertController {
@@ -42,10 +46,7 @@ export class AlertController {
   }
 
   @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateAlertDto,
-  ) {
+  update(@Param('id') id: string, @Body() updateDto: UpdateAlertDto) {
     return this.alertService.update(id, updateDto);
   }
 

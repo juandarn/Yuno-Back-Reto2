@@ -1,4 +1,12 @@
-import { Controller, Get, Query, Post, Body, ValidationPipe, UsePipes } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Post,
+  Body,
+  ValidationPipe,
+  UsePipes,
+} from '@nestjs/common';
 import { FailurePredictionService } from './failure-prediction.service';
 import {
   QueryPredictionDto,
@@ -8,13 +16,11 @@ import {
 
 @Controller('failure-prediction')
 export class FailurePredictionController {
-  constructor(
-    private readonly predictionService: FailurePredictionService,
-  ) {}
+  constructor(private readonly predictionService: FailurePredictionService) {}
 
   /**
    * Obtener predicciones de probabilidad de caída
-   * 
+   *
    * Ejemplos de uso:
    * - GET /failure-prediction?entity_type=merchant
    * - GET /failure-prediction?entity_type=provider&include_low_risk=true
@@ -31,7 +37,7 @@ export class FailurePredictionController {
 
   /**
    * Obtener predicciones con configuración personalizada
-   * 
+   *
    * Permite ajustar pesos de señales y umbrales
    */
   @Post()
@@ -96,9 +102,9 @@ export class FailurePredictionController {
 
     // Score global es el promedio ponderado
     const global_health = Math.round(
-      (merchants.global_health_score * 0.4 +
+      merchants.global_health_score * 0.4 +
         providers.global_health_score * 0.4 +
-        methods.global_health_score * 0.2),
+        methods.global_health_score * 0.2,
     );
 
     return {
