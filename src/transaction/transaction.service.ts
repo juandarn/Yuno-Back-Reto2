@@ -9,6 +9,9 @@ import { Merchant } from '../merchant/entities/merchant.entity';
 import { Provider } from '../provider/entities/provider.entity';
 import { PaymentMethod } from '../payment-method/entities/payment-method.entity';
 import { Country } from '../country/entities/country.entity';
+import { FailurePredictionService } from '../failure-prediction/failure-prediction.service';
+import { FailureProbability } from '../failure-prediction/dto/failure-prediction.dto';
+import { TxErrorType } from '../common/enums';
 import type {
   OptionsTreeResponse,
   OptionsRow,
@@ -29,6 +32,7 @@ export class TransactionService {
     @InjectRepository(PaymentMethod)
     private methodRepo: Repository<PaymentMethod>,
     @InjectRepository(Country) private countryRepo: Repository<Country>,
+    private readonly failurePredictionService: FailurePredictionService,
   ) {}
 
   async create(
@@ -389,6 +393,8 @@ export class TransactionService {
     range: { from: string; to: string };
     weeks_history: number;
     series: Array<{ date: string; actual: number; expected: number }>;
+    risk_analysis?: FailureProbability | null;
+    rejection_reasons?: Array<{ reason: string; count: number; percentage: number }>;
   }> {
     const weeksHistory = 1;
 
@@ -436,6 +442,42 @@ export class TransactionService {
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
 
+    const failurePrediction = await this.failurePredictionService.getPredictions({
+      merchant_id: params.merchant_id,
+      provider_id: params.provider_id?.toString(),
+      method_id: params.method_id?.toString(),
+      country_code: params.country_code,
+      time_window_minutes: 60,
+      include_low_risk: true,
+    });
+
+    // Encontrar la predicción más relevante (mayor riesgo)
+    const riskAnalysis = failurePrediction.predictions.length > 0 
+      ? failurePrediction.predictions[0] 
+      : null;
+
+    // Calcular estadísticas de rechazo por error_type
+    const rejectionStats = await this.transactionsRepository
+      .createQueryBuilder('tx')
+      .select('tx.error_type', 'reason')
+      .addSelect('COUNT(*)', 'count')
+      .where('tx.status != :status', { status: TxStatus.APPROVED })
+      .andWhere('tx.date >= :start AND tx.date < :end', { start: from, end: to })
+      .andWhere(params.merchant_id ? 'tx.merchant_id = :merchant_id' : '1=1', { merchant_id: params.merchant_id })
+      .andWhere(params.provider_id ? 'tx.provider_id = :provider_id' : '1=1', { provider_id: params.provider_id })
+      .andWhere(params.method_id ? 'tx.method_id = :method_id' : '1=1', { method_id: params.method_id })
+      .andWhere(params.country_code ? 'tx.country_code = :country_code' : '1=1', { country_code: params.country_code })
+      .groupBy('tx.error_type')
+      .getRawMany();
+
+    const totalRejections = rejectionStats.reduce((sum, item) => sum + Number(item.count), 0);
+    
+    const enhancedRejectionStats = rejectionStats.map(item => ({
+      reason: item.reason || 'unknown',
+      count: Number(item.count),
+      percentage: totalRejections > 0 ? (Number(item.count) / totalRejections) * 100 : 0
+    }));
+
     return {
       filters: {
         merchant_id: params.merchant_id,
@@ -446,6 +488,8 @@ export class TransactionService {
       range: { from: from.toISOString(), to: to.toISOString() },
       weeks_history: weeksHistory,
       series,
+      risk_analysis: riskAnalysis,
+      rejection_reasons: enhancedRejectionStats,
     };
   }
 
