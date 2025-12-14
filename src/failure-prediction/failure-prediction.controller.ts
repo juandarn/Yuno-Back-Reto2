@@ -15,10 +15,11 @@ import {
   TopRiskyEntity,
   Top3Summary,
 } from './dto/failure-prediction.dto';
+import { SimplePredictionQueryDto } from './dto/simple-prediction.dto';
 
 @Controller('failure-prediction')
 export class FailurePredictionController {
-  constructor(private readonly predictionService: FailurePredictionService) {}
+  constructor(private readonly predictionService: FailurePredictionService) { }
 
   /**
    * Obtener predicciones de probabilidad de caída
@@ -105,8 +106,8 @@ export class FailurePredictionController {
     // Score global es el promedio ponderado
     const global_health = Math.round(
       merchants.global_health_score * 0.4 +
-        providers.global_health_score * 0.4 +
-        methods.global_health_score * 0.2,
+      providers.global_health_score * 0.4 +
+      methods.global_health_score * 0.2,
     );
 
     return {
@@ -180,5 +181,49 @@ export class FailurePredictionController {
     return await this.predictionService.getTop3Summary({
       time_window_minutes: timeWindow,
     });
+  }
+
+
+  @Get('percentage')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async getPredictionPercentage(@Query() query: SimplePredictionQueryDto) {
+    const time_window_minutes = query.time_window_minutes ? Number(query.time_window_minutes) : 60;
+    const baseline_window_hours = query.baseline_window_hours ? Number(query.baseline_window_hours) : 168;
+    const min_sample_size = query.min_sample_size ? Number(query.min_sample_size) : 1;
+
+    // Importante: entity_type route para que use merchant+provider+method+country como llave
+    const summary = await this.predictionService.getPredictions({
+      entity_type: 'route',
+      include_low_risk: true, // para que no filtre y podamos devolver algo aunque sea bajo
+      time_window_minutes,
+      baseline_window_hours,
+      min_sample_size,
+      merchant_id: query.merchant_id,
+      provider_id: query.provider_id,
+      method_id: query.method_id,
+      country_code: query.country_code,
+    } as any);
+
+    // Si no hay datos suficientes, devuelve 0 y un reason simple
+    if (!summary?.predictions?.length) {
+      return {
+        percentage: 0,
+        probability: 0,
+        risk_level: 'LOW',
+        reason: 'Sin datos suficientes para calcular predicción con esos filtros',
+      };
+    }
+
+    // Como route agrupa por la combinación, normalmente será 1 predicción.
+    const pred = summary.predictions[0];
+
+    const probability = typeof pred.probability === 'number' ? pred.probability : 0;
+    const percentage = Math.round(probability * 100);
+
+    return {
+      percentage,
+      probability,
+      risk_level: pred.risk_level,
+    };
   }
 }
