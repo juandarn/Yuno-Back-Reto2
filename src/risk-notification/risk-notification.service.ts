@@ -44,15 +44,16 @@ export class RiskNotificationService {
       // 1. Obtener predicciones actuales
       const predictions = await this.failurePredictionService.getPredictions({
         entity_type: 'merchant',
-        time_window_minutes: 60,
+        time_window_minutes: 10080,
         include_low_risk: false,
       });
 
-      const providerPredictions = await this.failurePredictionService.getPredictions({
-        entity_type: 'provider',
-        time_window_minutes: 60,
-        include_low_risk: false,
-      });
+      const providerPredictions =
+        await this.failurePredictionService.getPredictions({
+          entity_type: 'provider',
+          time_window_minutes: 10080,
+          include_low_risk: false,
+        });
 
       const allPredictions = [
         ...predictions.predictions,
@@ -61,10 +62,15 @@ export class RiskNotificationService {
 
       // Filtrar solo MEDIUM, HIGH, CRITICAL
       const riskyEntities = allPredictions.filter(
-        (p) => p.risk_level === 'medium' || p.risk_level === 'high' || p.risk_level === 'critical',
+        (p) =>
+          p.risk_level === 'medium' ||
+          p.risk_level === 'high' ||
+          p.risk_level === 'critical',
       );
 
-      this.logger.log(`📊 Encontradas ${riskyEntities.length} entidades en riesgo`);
+      this.logger.log(
+        `📊 Encontradas ${riskyEntities.length} entidades en riesgo`,
+      );
 
       // 2. Procesar cada entidad en riesgo
       for (const entity of riskyEntities) {
@@ -82,7 +88,6 @@ export class RiskNotificationService {
       this.logger.error('❌ Error en revisión periódica:', error);
     }
   }
-
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async checkGuardRetries() {
@@ -129,7 +134,9 @@ export class RiskNotificationService {
     });
 
     if (recentlyDismissed) {
-      this.logger.log(`🚫 ${entity.entity_name} fue descartada recientemente - no notificar`);
+      this.logger.log(
+        `🚫 ${entity.entity_name} fue descartada recientemente - no notificar`,
+      );
       return;
     }
 
@@ -141,12 +148,16 @@ export class RiskNotificationService {
    * Notifica al guardia de turno sobre una entidad en riesgo
    */
   private async notifyGuard(entity: FailureProbability) {
-    this.logger.log(`🚨 Nueva entidad en riesgo detectada: ${entity.entity_name} (${entity.risk_level})`);
+    this.logger.log(
+      `🚨 Nueva entidad en riesgo detectada: ${entity.entity_name} (${entity.risk_level})`,
+    );
 
     // Obtener guardia de turno
     const guardUser = await this.getOnCallGuard();
     if (!guardUser) {
-      this.logger.error('❌ No hay guardia de turno disponible - escalando directamente');
+      this.logger.error(
+        '❌ No hay guardia de turno disponible - escalando directamente',
+      );
       await this.escalateToAll(entity, null);
       return;
     }
@@ -156,7 +167,8 @@ export class RiskNotificationService {
       severity: this.mapRiskToSeverity(entity.risk_level),
       title: `⚠️ Riesgo ${entity.risk_level.toUpperCase()} detectado: ${entity.entity_name}`,
       explanation: this.buildAlertExplanation(entity),
-      merchant_id: entity.entity_type === 'merchant' ? entity.entity_id : undefined,
+      merchant_id:
+        entity.entity_type === 'merchant' ? entity.entity_id : undefined,
     });
 
     // Registrar notificación de riesgo
@@ -178,12 +190,16 @@ export class RiskNotificationService {
       },
     });
 
+
+
     await this.riskNotificationRepository.save(riskNotification);
 
     // Enviar notificación al guardia
     await this.sendGuardNotification(guardUser, alert, riskNotification);
 
-    this.logger.log(`✉️ Guardia notificado: ${guardUser.name} (${guardUser.email})`);
+    this.logger.log(
+      `✉️ Guardia notificado: ${guardUser.name} (${guardUser.email})`,
+    );
   }
 
   /**
@@ -194,35 +210,77 @@ export class RiskNotificationService {
     alert: any,
     riskNotification: RiskNotification,
   ) {
+    const subject = `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`;
+    const emailBody = this.buildGuardEmailBody(riskNotification, guardUser);
+
+    // 1) EMAIL (como ya lo tienes)
     const emailChannel = await this.channelRepository.findOne({
       where: { name: 'gmail', activo: true },
     });
 
-    if (!emailChannel) {
-      this.logger.error('Canal de email no disponible');
+    if (emailChannel) {
+      const notification = await this.notificationService.create({
+        alerta_id: alert.id,
+        usuario_id: guardUser.id,
+        canal_id: emailChannel.id,
+        payload: JSON.stringify({
+          to: guardUser.email,
+          subject,
+          body: emailBody,
+        }), // no lo stringifiques, tu service lo soporta
+      });
+
+      await this.notificationService.sendNotification(
+        notification.id,
+        'gmail',
+        {
+          to: guardUser.email,
+          subject,
+          body: emailBody,
+        },
+      );
+    } else {
+      this.logger.warn('Canal gmail no disponible');
+    }
+
+    // 2) WHATSAPP (nuevo)
+    const whatsappChannel = await this.channelRepository.findOne({
+      where: { name: 'whatsapp', activo: true },
+    });
+
+    const toWhatsApp = this.formatWhatsAppTo(
+      (guardUser as any).number ?? (guardUser as any).number,
+    );
+
+    console.log(toWhatsApp);
+
+    if (!whatsappChannel) {
+      this.logger.warn('Canal whatsapp no disponible');
       return;
     }
 
-    const notification = await this.notificationService.create({
+    if (!toWhatsApp) {
+      this.logger.warn(
+        `Usuario ${guardUser.id} no tiene phone/cellphone para WhatsApp`,
+      );
+      return;
+    }
+
+    // WhatsApp: mejor mandar texto plano corto (no HTML)
+    const waBody = this.buildGuardWhatsAppBody(riskNotification, guardUser);
+
+    const waNotif = await this.notificationService.create({
       alerta_id: alert.id,
       usuario_id: guardUser.id,
-      canal_id: emailChannel.id,
-      payload: JSON.stringify({
-        to: guardUser.email,
-        subject: `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`,
-        body: this.buildGuardEmailBody(riskNotification, guardUser),
-      }),
+      canal_id: whatsappChannel.id,
+      payload: JSON.stringify({ to: toWhatsApp, subject, body: waBody }),
     });
 
-    await this.notificationService.sendNotification(
-      notification.id,
-      'gmail',
-      {
-        to: guardUser.email,
-        subject: `🚨 [GUARDIA] Riesgo ${riskNotification.risk_level.toUpperCase()}: ${riskNotification.entity_name}`,
-        body: this.buildGuardEmailBody(riskNotification, guardUser),
-      },
-    );
+    await this.notificationService.sendNotification(waNotif.id, 'whatsapp', {
+      to: toWhatsApp,
+      subject, // en tu WhatsAppChannel lo pone en negrita
+      body: waBody,
+    });
   }
 
   /**
@@ -294,7 +352,6 @@ export class RiskNotificationService {
     let riskNotification = notification;
 
     if (!riskNotification && entity) {
-      // Crear nueva si es escalación directa
       riskNotification = this.riskNotificationRepository.create({
         entity_type: entity.entity_type,
         entity_id: entity.entity_id,
@@ -308,61 +365,104 @@ export class RiskNotificationService {
       });
       await this.riskNotificationRepository.save(riskNotification);
     } else if (riskNotification) {
-      // Actualizar existente
       riskNotification.status = 'escalated' as any;
       riskNotification.escalated_to_all = true;
       riskNotification.escalated_at = new Date();
       await this.riskNotificationRepository.save(riskNotification);
     }
 
-    // Obtener todos los usuarios de Yuno
     const yunoUsers = await this.userRepository.find({
       where: { type: 'YUNO', active: true },
     });
 
-    this.logger.log(`📢 Escalando ${riskNotification!.entity_name} a ${yunoUsers.length} empleados de Yuno`);
+    this.logger.log(
+      `📢 Escalando ${riskNotification!.entity_name} a ${yunoUsers.length} empleados de Yuno`,
+    );
 
-    // Crear alerta general
     const alert = await this.alertService.create({
       severity: AlertSeverity.CRITICAL,
       title: `🚨 [ESCALADO] Riesgo CRÍTICO: ${riskNotification!.entity_name}`,
-      explanation: `Esta alerta fue escalada automáticamente después de ${riskNotification!.guard_attempts} intentos sin respuesta del guardia.\n\nSe requiere atención inmediata de todo el equipo.`,
+      explanation:
+        `Esta alerta fue escalada automáticamente después de ${riskNotification!.guard_attempts} intentos sin respuesta del guardia.\n\n` +
+        `Se requiere atención inmediata de todo el equipo.`,
     });
 
+    // Canales
     const emailChannel = await this.channelRepository.findOne({
       where: { name: 'gmail', activo: true },
     });
 
-    if (!emailChannel) {
-      this.logger.error('Canal de email no disponible');
+    const whatsappChannel = await this.channelRepository.findOne({
+      where: { name: 'whatsapp', activo: true },
+    });
+
+    if (!emailChannel && !whatsappChannel) {
+      this.logger.error('No hay canales disponibles (gmail/whatsapp)');
       return;
     }
 
-    // Enviar a todos
-    for (const user of yunoUsers) {
-      const notification = await this.notificationService.create({
-        alerta_id: alert.id,
-        usuario_id: user.id,
-        canal_id: emailChannel.id,
-        payload: JSON.stringify({
-          to: user.email,
-          subject: `🚨 [CRÍTICO] Riesgo detectado: ${riskNotification!.entity_name}`,
-          body: this.buildEscalatedEmailBody(riskNotification!),
-        }),
-      });
+    const emailSubject = `🚨 [CRÍTICO] Riesgo detectado: ${riskNotification!.entity_name}`;
+    const emailBody = this.buildEscalatedEmailBody(riskNotification!);
 
-      await this.notificationService.sendNotification(
-        notification.id,
-        'gmail',
-        {
+    const waSubject = `🚨 [CRÍTICO] ${riskNotification!.entity_name}`;
+    const waBody = this.buildEscalatedWhatsAppBody(riskNotification!);
+
+    for (const user of yunoUsers) {
+      // 1) Gmail
+      if (emailChannel && user.email) {
+        const n = await this.notificationService.create({
+          alerta_id: alert.id,
+          usuario_id: user.id,
+          canal_id: emailChannel.id,
+          payload: JSON.stringify({
+            to: user.email,
+            subject: emailSubject,
+            body: emailBody,
+          }),
+        });
+
+        await this.notificationService.sendNotification(n.id, 'gmail', {
           to: user.email,
-          subject: `🚨 [CRÍTICO] Riesgo detectado: ${riskNotification!.entity_name}`,
-          body: this.buildEscalatedEmailBody(riskNotification!),
-        },
-      );
+          subject: emailSubject,
+          body: emailBody,
+        });
+      }
+
+      // 2) WhatsApp
+      if (whatsappChannel) {
+        const toWa = this.formatWhatsAppTo(
+          (user as any).cellphone ?? (user as any).phone,
+        );
+
+        if (!toWa) {
+          this.logger.warn(
+            `Usuario ${user.id} sin phone/cellphone para WhatsApp`,
+          );
+          continue;
+        }
+
+        const n = await this.notificationService.create({
+          alerta_id: alert.id,
+          usuario_id: user.id,
+          canal_id: whatsappChannel.id,
+          payload: JSON.stringify({
+            to: toWa,
+            subject: waSubject,
+            body: waBody,
+          }),
+        });
+
+        await this.notificationService.sendNotification(n.id, 'whatsapp', {
+          to: toWa,
+          subject: waSubject,
+          body: waBody,
+        });
+      }
     }
 
-    this.logger.log(`✅ Notificación escalada enviada a ${yunoUsers.length} empleados`);
+    this.logger.log(
+      `✅ Escalación enviada a ${yunoUsers.length} usuarios (gmail/whatsapp)`,
+    );
   }
 
   /**
@@ -389,7 +489,9 @@ export class RiskNotificationService {
 
     await this.riskNotificationRepository.save(notification);
 
-    this.logger.log(`✅ Notificación descartada por guardia: ${notification.entity_name}`);
+    this.logger.log(
+      `✅ Notificación descartada por guardia: ${notification.entity_name}`,
+    );
 
     return notification;
   }
@@ -406,7 +508,9 @@ export class RiskNotificationService {
       throw new Error('Notificación no encontrada');
     }
 
-    this.logger.log(`📢 Guardia decidió propagar manualmente: ${notification.entity_name}`);
+    this.logger.log(
+      `📢 Guardia decidió propagar manualmente: ${notification.entity_name}`,
+    );
 
     await this.escalateToAll(null, notification);
   }
@@ -429,7 +533,9 @@ export class RiskNotificationService {
 
     await this.riskNotificationRepository.save(notification);
 
-    this.logger.log(`✅ Notificación marcada como resuelta: ${notification.entity_name}`);
+    this.logger.log(
+      `✅ Notificación marcada como resuelta: ${notification.entity_name}`,
+    );
 
     return notification;
   }
@@ -448,7 +554,9 @@ export class RiskNotificationService {
       .execute();
 
     if (result.affected && result.affected > 0) {
-      this.logger.log(`🗑️ Limpiadas ${result.affected} notificaciones antiguas`);
+      this.logger.log(
+        `🗑️ Limpiadas ${result.affected} notificaciones antiguas`,
+      );
     }
   }
 
@@ -469,7 +577,10 @@ export class RiskNotificationService {
   /**
    * Construye el cuerpo del email para el guardia
    */
-  private buildGuardEmailBody(notification: RiskNotification, guardUser: User): string {
+  private buildGuardEmailBody(
+    notification: RiskNotification,
+    guardUser: User,
+  ): string {
     const metadata = notification.metadata || {};
 
     const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080'; // pon tu puerto real
@@ -523,26 +634,38 @@ export class RiskNotificationService {
       <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
       <p><strong>Intento:</strong> ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}</p>
       
-      ${metadata.baseline_comparison ? `
+      ${
+        metadata.baseline_comparison
+          ? `
       <h4>📊 Comparación vs Baseline:</h4>
       <ul>
         <li>Tasa de error actual: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%</li>
         <li>Tasa de error baseline: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%</li>
         <li>Desviación: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%</li>
       </ul>
-      ` : ''}
+      `
+          : ''
+      }
       
-      ${metadata.trend ? `
+      ${
+        metadata.trend
+          ? `
       <h4>📈 Tendencia:</h4>
       <p>Dirección: <strong>${metadata.trend.direction}</strong></p>
-      ` : ''}
+      `
+          : ''
+      }
       
-      ${metadata.recommended_actions ? `
+      ${
+        metadata.recommended_actions
+          ? `
       <h4>💡 Acciones Recomendadas:</h4>
       <ul>
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
-      ` : ''}
+      `
+          : ''
+      }
       
       <div class="actions">
         <h4>⚡ Dirigete a la aplicación para decidir que hacer</h4>
@@ -600,12 +723,16 @@ export class RiskNotificationService {
       <p><strong>Nivel de Riesgo:</strong> ${notification.risk_level.toUpperCase()}</p>
       <p><strong>Probabilidad de fallo:</strong> ${(notification.probability * 100).toFixed(1)}%</p>
       
-      ${metadata.recommended_actions ? `
+      ${
+        metadata.recommended_actions
+          ? `
       <h4>💡 Acciones Recomendadas:</h4>
       <ul>
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
-      ` : ''}
+      `
+          : ''
+      }
       
       <p style="margin-top: 20px;">
         ⚡ Dirigete a la aplicación para decidir que hacer
@@ -646,5 +773,113 @@ ${entity.recommended_actions.join('\n')}
       default:
         return AlertSeverity.INFO;
     }
+  }
+
+  private formatWhatsAppTo(phone?: string) {
+    if (!phone) return null;
+
+    const cleaned = phone.replace(/[\s\-\(\)]/g, '');
+    if (cleaned.startsWith('whatsapp:')) return cleaned;
+    if (cleaned.startsWith('+')) return `whatsapp:${cleaned}`;
+    return `whatsapp:+${cleaned}`;
+  }
+
+  private buildEscalatedWhatsAppBody(notification: RiskNotification): string {
+    const metadata = notification.metadata || {};
+
+    const lines: string[] = [];
+
+    lines.push('🚨 *ALERTA CRÍTICA ESCALADA*');
+    lines.push('');
+    lines.push('⚠️ *ATENCIÓN INMEDIATA REQUERIDA*');
+    lines.push(
+      `Esta alerta fue escalada automáticamente después de ${notification.guard_attempts} intentos sin respuesta del guardia de turno.`,
+    );
+    lines.push('');
+
+    lines.push(`*Entidad en Riesgo:* ${notification.entity_name}`);
+    lines.push(`*Tipo:* ${notification.entity_type}`);
+    lines.push(
+      `*Nivel de Riesgo:* ${String(notification.risk_level).toUpperCase()}`,
+    );
+    lines.push(
+      `*Probabilidad de fallo:* ${(notification.probability * 100).toFixed(1)}%`,
+    );
+
+    if (metadata.recommended_actions?.length) {
+      lines.push('');
+      lines.push('💡 *Acciones Recomendadas:*');
+      for (const action of metadata.recommended_actions as string[]) {
+        lines.push(`• ${action}`);
+      }
+    }
+
+    lines.push('');
+    lines.push('⚡ Dirígete a la aplicación para decidir qué hacer.');
+
+    // WhatsApp tiene límite ~1600 chars (y tu canal ya trunca). Igual, mejor no pasarse:
+    return lines.join('\n').slice(0, 1600);
+  }
+
+  private buildGuardWhatsAppBody(
+    notification: RiskNotification,
+    guardUser: User,
+  ): string {
+    const metadata = notification.metadata || {};
+
+    const lines: string[] = [];
+    lines.push('🚨 *ALERTA DE RIESGO - Acción requerida*');
+    lines.push('');
+    lines.push(`Hola *${guardUser.name}*,`);
+    lines.push(
+      'Se detectó un riesgo que requiere tu atención como guardia de turno:',
+    );
+    lines.push('');
+
+    lines.push(
+      `*${String(notification.risk_level).toUpperCase()}* — ${notification.entity_name}`,
+    );
+    lines.push(`*Tipo:* ${notification.entity_type}`);
+    lines.push(
+      `*Probabilidad de fallo:* ${(notification.probability * 100).toFixed(1)}%`,
+    );
+    lines.push(
+      `*Intento:* ${notification.guard_attempts} de ${this.MAX_GUARD_ATTEMPTS}`,
+    );
+
+    if (metadata.baseline_comparison) {
+      lines.push('');
+      lines.push('📊 *Comparación vs Baseline:*');
+      lines.push(
+        `• Error actual: ${(metadata.baseline_comparison.current_error_rate * 100).toFixed(2)}%`,
+      );
+      lines.push(
+        `• Error baseline: ${(metadata.baseline_comparison.baseline_error_rate * 100).toFixed(2)}%`,
+      );
+      lines.push(
+        `• Desviación: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%`,
+      );
+    }
+
+    if (metadata.trend) {
+      lines.push('');
+      lines.push('📈 *Tendencia:*');
+      lines.push(`• Dirección: *${metadata.trend.direction}*`);
+    }
+
+    if (metadata.recommended_actions?.length) {
+      lines.push('');
+      lines.push('💡 *Acciones Recomendadas:*');
+      for (const action of metadata.recommended_actions as string[]) {
+        lines.push(`• ${action}`);
+      }
+    }
+
+    lines.push('');
+    lines.push(
+      `⏰ Si no respondes en ${this.GUARD_NOTIFICATION_INTERVAL_MINUTES} minutos, se enviará otro recordatorio. Después de ${this.MAX_GUARD_ATTEMPTS} intentos, se escalará automáticamente.`,
+    );
+
+    return lines.join('\n').slice(0, 1600);
   }
 }
