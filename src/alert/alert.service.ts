@@ -2,9 +2,14 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Alert } from './entities/alert.entity';
-import { CreateAlertDto, UpdateAlertDto, AlertStatus } from './dto/create-alert.dto';
+import {
+  CreateAlertDto,
+  UpdateAlertDto,
+  AlertStatus,
+} from './dto/create-alert.dto';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationChannelService } from '../notification-channel/notification-channel.service';
+import { OnCallService } from '../on-call/on-call.service';
 
 @Injectable()
 export class AlertService {
@@ -15,6 +20,7 @@ export class AlertService {
     private alertRepository: Repository<Alert>,
     private notificationsService: NotificationService,
     private channelsService: NotificationChannelService,
+    private onCallService: OnCallService,
   ) {}
 
   async create(createDto: CreateAlertDto): Promise<Alert> {
@@ -22,6 +28,7 @@ export class AlertService {
       ...createDto,
       estado: createDto.state || AlertStatus.OPEN,
     });
+
     const savedAlert = await this.alertRepository.save(alert);
 
     // Enviar notificaciones automáticamente para alertas críticas
@@ -84,10 +91,24 @@ export class AlertService {
       // Obtener todos los canales activos
       const activeChannels = await this.channelsService.findActive();
 
+      // Resolver destinatario on-call (prioridad 1)
+      const onCallSchedule = await this.onCallService.findByPriority(1);
+      const onCallUserId =
+        onCallSchedule?.user?.id ?? (onCallSchedule as any)?.user_id;
+      const onCallEmail =
+        onCallSchedule?.user?.email ?? (onCallSchedule as any)?.user?.email;
+
+      if (!onCallUserId) {
+        this.logger.warn(
+          'No se encontró un usuario on-call activo con prioridad 1. No se enviarán notificaciones.',
+        );
+        return;
+      }
+
       for (const channel of activeChannels) {
-        // Determinar el tipo de canal basado en la configuración
-        let channelType = 'gmail'; // Default
-        let recipient = channel.email;
+        // Determinar tipo y destinatario
+        let channelType = 'gmail';
+        let recipient = onCallEmail || channel.email;
 
         if (channel.slack) {
           channelType = 'slack';
@@ -97,10 +118,11 @@ export class AlertService {
           recipient = channel.webhook;
         }
 
-        // Crear la notificación en la base de datos
+        // Crear la notificación en DB con IDs reales
+        // Nota: aquí seguimos usando CreateNotificationDto tal como lo tienes (alerta_id/usuario_id/canal_id)
         const notification = await this.notificationsService.create({
           alerta_id: alert.id,
-          usuario_id: 'system', // O usar el merchant_id si está disponible
+          usuario_id: String(onCallUserId),
           canal_id: channel.id,
           payload: JSON.stringify({
             severity: alert.severity,
@@ -115,22 +137,29 @@ export class AlertService {
           channelType,
           {
             to: recipient,
-            subject: `🚨 ${alert.severity.toUpperCase()}: ${alert.title}`,
-            body: alert.explanation || 'No hay detalles adicionales disponibles.',
+            subject: `ALERTA ${alert.severity.toUpperCase()}: ${alert.title}`,
+            body:
+              alert.explanation || 'No hay detalles adicionales disponibles.',
             metadata: {
               alertId: alert.id,
               metricId: alert.metric_id,
               severity: alert.severity,
               merchantId: alert.merchant_id,
               timestamp: alert.fecha,
+              onCallUserId: onCallUserId,
+              onCallScheduleId: onCallSchedule?.id,
             },
           },
         );
       }
 
-      this.logger.log(`Notifications sent for alert ${alert.id}`);
+      this.logger.log(`Notifications processed for alert ${alert.id}`);
     } catch (error) {
-      this.logger.error(`Failed to send alert notifications: ${error.message}`, error.stack);
+      this.logger.error(
+        `Failed to send alert notifications: ${error?.message ?? error}`,
+        error?.stack,
+      );
+      throw error;
     }
   }
 

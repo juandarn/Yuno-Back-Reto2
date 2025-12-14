@@ -13,6 +13,7 @@ import { PaymentMethod } from '../payment-method/entities/payment-method.entity'
 import { Country } from '../country/entities/country.entity';
 import { Metric } from '../metric/entities/metric.entity';
 import { Alert } from '../alert/entities/alert.entity';
+import { OnCallSchedule } from '../on-call/entities/on-call-schedule.entity';
 import { Notification } from '../notification/entities/notification.entity';
 import { NotificationChannel } from '../notification-channel/entities/notification-channel.entity';
 
@@ -133,6 +134,37 @@ export class SeedService {
         );
       }
       await userRepo.save(merchantUsers);
+
+      // ------------------------------------------------------------------
+      // 3.1) On-call schedule (ejemplo mínimo)
+      // ------------------------------------------------------------------
+      const onCallRepo = runner.manager.getRepository(OnCallSchedule);
+      const nowOnCall = new Date();
+      
+      // Prioridad 1: primer usuario interno (si existe)
+      if (yunoUsers?.length) {
+        const schedules: Partial<OnCallSchedule>[] = [
+          {
+            user_id: yunoUsers[0].id,
+            priority: 1,
+            active: true,
+            start_at: nowOnCall,
+          },
+        ];
+
+        // Prioridad 2: segundo usuario interno (si existe)
+        if (yunoUsers.length > 1) {
+          schedules.push({
+            user_id: yunoUsers[1].id,
+            priority: 2,
+            active: true,
+            start_at: nowOnCall,
+          });
+        }
+
+        await onCallRepo.save(schedules.map((s) => onCallRepo.create(s)));
+      }
+
 
       // ------------------------------------------------------------------
       // 4) Notification channels
