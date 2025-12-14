@@ -10,6 +10,7 @@ import { Merchant } from '../merchant/entities/merchant.entity';
 import { Provider } from '../provider/entities/provider.entity';
 import { PaymentMethod } from '../payment-method/entities/payment-method.entity';
 import { Country } from '../country/entities/country.entity';
+import { FailurePredictionModule } from '../failure-prediction/failure-prediction.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { Country } from '../country/entities/country.entity';
       PaymentMethod,
       Country,
     ]),
+    FailurePredictionModule,
   ],
   controllers: [TransactionController],
   providers: [TransactionService],

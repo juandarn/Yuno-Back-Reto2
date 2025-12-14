@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, IsNull, MoreThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -30,7 +30,7 @@ export class RiskNotificationService {
     private failurePredictionService: FailurePredictionService,
     private notificationService: NotificationService,
     private alertService: AlertService,
-  ) {}
+  ) { }
 
   async listMinimal(status?: string, page = 1, limit = 20) {
     const qb = this.riskNotificationRepository
@@ -530,22 +530,21 @@ export class RiskNotificationService {
   /**
    * Propaga/escala manualmente una notificación (llamado desde el frontend por el guardia)
    */
-  async propagateRiskNotification(notificationId: string): Promise<void> {
+  async propagateRiskNotification(notificationId: string): Promise<{ entity_name: string }> {
     const notification = await this.riskNotificationRepository.findOne({
       where: { id: notificationId },
     });
 
     if (!notification) {
-      throw new Error('Notificación no encontrada');
+      throw new NotFoundException('Notificación no encontrada');
     }
 
-    this.logger.log(
-      `📢 Guardia decidió propagar manualmente: ${notification.entity_name}`,
-    );
+    this.logger.log(`📢 Guardia decidió propagar manualmente: ${notification.entity_name}`);
 
     await this.escalateToAll(null, notification);
-  }
 
+    return { entity_name: notification.entity_name };
+  }
   /**
    * Marca una notificación como resuelta
    */
@@ -675,7 +674,7 @@ export class RiskNotificationService {
         <li>Deviation: ${metadata.baseline_comparison.deviation_percentage.toFixed(1)}%</li>
       </ul>
       `
-          : ''
+        : ''
       }
       
       ${
@@ -684,7 +683,7 @@ export class RiskNotificationService {
       <h4>📈 Trend:</h4>
       <p>Direction: <strong>${metadata.trend.direction}</strong></p>
       `
-          : ''
+        : ''
       }
       
       ${
@@ -695,7 +694,7 @@ export class RiskNotificationService {
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
       `
-          : ''
+        : ''
       }
       
       <div class="actions">
@@ -762,7 +761,7 @@ export class RiskNotificationService {
         ${metadata.recommended_actions.map((action: string) => `<li>${action}</li>`).join('')}
       </ul>
       `
-          : ''
+        : ''
       }
       
       <p style="margin-top: 20px;">

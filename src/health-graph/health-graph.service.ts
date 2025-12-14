@@ -33,6 +33,8 @@ interface RouteMetrics {
   provider_name: string;
   method_name: string;
   country_name: string;
+  approval_loss_rate?: number; // Nueva métrica: tasa de pérdida de aprobaciones
+  baseline_approval_rate?: number; // Tasa de aprobación en período baseline
 }
 
 @Injectable()
@@ -49,7 +51,7 @@ export class HealthGraphService {
     @InjectRepository(Country)
     private countryRepository: Repository<Country>,
     private dataSource: DataSource,
-  ) {}
+  ) { }
 
   async getHealthGraph(
     query: QueryHealthGraphDto,
@@ -59,12 +61,19 @@ export class HealthGraphService {
     const warningErrorRate = query.warning_error_rate || 0.15;
     const criticalApprovalRate = query.critical_approval_rate || 0.5;
     const warningApprovalRate = query.warning_approval_rate || 0.7;
+    const criticalApprovalLossRate = query.critical_approval_loss_rate || 0.2; // 20% pérdida es crítico
+    const warningApprovalLossRate = query.warning_approval_loss_rate || 0.1; // 10% pérdida es warning
 
     const startTime = new Date();
     startTime.setMinutes(startTime.getMinutes() - timeWindowMinutes);
 
+    // Calcular baseline (período anterior del mismo tamaño para comparación)
+    const baselineStartTime = new Date(startTime);
+    baselineStartTime.setMinutes(baselineStartTime.getMinutes() - timeWindowMinutes);
+
     const { routeMetrics, transactions } = await this.getRouteMetrics(
       startTime,
+      baselineStartTime,
       query,
     );
 
@@ -75,6 +84,8 @@ export class HealthGraphService {
       warningErrorRate,
       criticalApprovalRate,
       warningApprovalRate,
+      criticalApprovalLossRate,
+      warningApprovalLossRate,
     );
 
     const filteredRoutes = query.only_issues
@@ -102,39 +113,72 @@ export class HealthGraphService {
 
   private async getRouteMetrics(
     startTime: Date,
+    baselineStartTime: Date,
     query: QueryHealthGraphDto,
   ): Promise<{
     routeMetrics: Map<string, RouteMetrics>;
     transactions: Transaction[];
   }> {
-    // Primero obtener transacciones en la ventana de tiempo
-    const txQueryBuilder = this.dataSource
+    // Obtener transacciones del período actual
+    const currentTxQueryBuilder = this.dataSource
       .getRepository(Transaction)
       .createQueryBuilder('t')
       .where('t.date >= :startTime', { startTime });
 
     if (query.merchant_id) {
-      txQueryBuilder.andWhere('t.merchant_id = :merchant_id', {
+      currentTxQueryBuilder.andWhere('t.merchant_id = :merchant_id', {
         merchant_id: query.merchant_id,
       });
     }
     if (query.provider_id) {
-      txQueryBuilder.andWhere('t.provider_id = :provider_id', {
+      currentTxQueryBuilder.andWhere('t.provider_id = :provider_id', {
         provider_id: query.provider_id,
       });
     }
     if (query.method_id) {
-      txQueryBuilder.andWhere('t.method_id = :method_id', {
+      currentTxQueryBuilder.andWhere('t.method_id = :method_id', {
         method_id: query.method_id,
       });
     }
     if (query.country_code) {
-      txQueryBuilder.andWhere('t.country_code = :country_code', {
+      currentTxQueryBuilder.andWhere('t.country_code = :country_code', {
         country_code: query.country_code,
       });
     }
 
-    const transactions = await txQueryBuilder.getMany();
+    const transactions = await currentTxQueryBuilder.getMany();
+
+    // Obtener transacciones del período baseline para comparación
+    const baselineTxQueryBuilder = this.dataSource
+      .getRepository(Transaction)
+      .createQueryBuilder('t')
+      .where('t.date >= :baselineStartTime AND t.date < :startTime', {
+        baselineStartTime,
+        startTime,
+      });
+
+    if (query.merchant_id) {
+      baselineTxQueryBuilder.andWhere('t.merchant_id = :merchant_id', {
+        merchant_id: query.merchant_id,
+      });
+    }
+    if (query.provider_id) {
+      baselineTxQueryBuilder.andWhere('t.provider_id = :provider_id', {
+        provider_id: query.provider_id,
+      });
+    }
+    if (query.method_id) {
+      baselineTxQueryBuilder.andWhere('t.method_id = :method_id', {
+        method_id: query.method_id,
+      });
+    }
+    if (query.country_code) {
+      baselineTxQueryBuilder.andWhere('t.country_code = :country_code', {
+        country_code: query.country_code,
+      });
+    }
+
+    const baselineTransactions = await baselineTxQueryBuilder.getMany();
 
     if (transactions.length === 0) {
       return { routeMetrics: new Map(), transactions: [] };
@@ -166,10 +210,8 @@ export class HealthGraphService {
     const methodMap = new Map(methods.map((m) => [m.id, m.name]));
     const countryMap = new Map(countries.map((c) => [c.code, c.name]));
 
-    // Agrupar transacciones por ruta
+    // Agrupar transacciones actuales por ruta
     const routeMetricsMap = new Map<string, RouteMetrics>();
-
-    // Agrupar por merchant_id + provider_id + method_id + country_code
     const routeGroups = new Map<string, typeof transactions>();
 
     for (const tx of transactions) {
@@ -186,11 +228,29 @@ export class HealthGraphService {
       routeGroups.get(routeKey)!.push(tx);
     }
 
-    // Calcular métricas por ruta
+    // Agrupar transacciones baseline por ruta
+    const baselineRouteGroups = new Map<string, typeof baselineTransactions>();
+
+    for (const tx of baselineTransactions) {
+      const routeKey = this.getRouteKey({
+        merchant_id: tx.merchant_id,
+        provider_id: tx.provider_id,
+        method_id: tx.method_id,
+        country_code: tx.country_code,
+      });
+
+      if (!baselineRouteGroups.has(routeKey)) {
+        baselineRouteGroups.set(routeKey, []);
+      }
+      baselineRouteGroups.get(routeKey)!.push(tx);
+    }
+
+    // Calcular métricas por ruta incluyendo tasa de pérdida de aprobaciones
     for (const [routeKey, txs] of routeGroups.entries()) {
       const [merchant_id, provider_id, method_id, country_code] =
         routeKey.split('|');
 
+      // Métricas del período actual
       const approved = txs.filter((t) => t.status === 'approved').length;
       const errors = txs.filter(
         (t) => t.status === 'error' || t.status === 'timeout',
@@ -205,6 +265,24 @@ export class HealthGraphService {
       const p95_index = Math.ceil(0.95 * latencies.length) - 1;
       const p95_latency = latencies[Math.max(0, p95_index)] || 0;
 
+      // Métricas del período baseline
+      const baselineTxs = baselineRouteGroups.get(routeKey) || [];
+      let baseline_approval_rate = 0;
+      let approval_loss_rate = 0;
+
+      if (baselineTxs.length > 0) {
+        const baselineApproved = baselineTxs.filter(
+          (t) => t.status === 'approved',
+        ).length;
+        const baselineTotal = baselineTxs.length;
+        baseline_approval_rate =
+          baselineTotal > 0 ? baselineApproved / baselineTotal : 0;
+
+        // Calcular tasa de pérdida de aprobaciones
+        // Positivo = pérdida (empeoramiento), Negativo = mejora
+        approval_loss_rate = baseline_approval_rate - approval_rate;
+      }
+
       routeMetricsMap.set(routeKey, {
         approval_rate,
         error_rate,
@@ -214,6 +292,8 @@ export class HealthGraphService {
         provider_name: providerMap.get(provider_id) || 'Unknown Provider',
         method_name: methodMap.get(method_id) || 'Unknown Method',
         country_name: countryMap.get(country_code) || 'Unknown Country',
+        baseline_approval_rate,
+        approval_loss_rate,
       });
     }
 
@@ -227,6 +307,8 @@ export class HealthGraphService {
     warningErrorRate: number,
     criticalApprovalRate: number,
     warningApprovalRate: number,
+    criticalApprovalLossRate: number,
+    warningApprovalLossRate: number,
   ): Promise<PaymentRoute[]> {
     const routes: PaymentRoute[] = [];
 
@@ -263,34 +345,39 @@ export class HealthGraphService {
       const [merchant_id, provider_id, method_id, country_code] =
         routeKey.split('|');
 
-      // Determinar el estado general de la ruta
+      const merchantKey = merchant_id;
+      const providerKey = provider_id;
+      const methodKey = method_id;
+      const countryKey = country_code;
+
+      const merchantProviderKey = `${merchant_id}|${provider_id}`;
+      const providerMethodKey = `${provider_id}|${method_id}`;
+      const methodCountryKey = `${method_id}|${country_code}`;
+
+      const merchantMetrics =
+        metricsByMerchant.get(merchantKey) || routeMetrics;
+      const providerMetrics =
+        metricsByProvider.get(providerKey) || routeMetrics;
+      const methodMetrics = metricsByMethod.get(methodKey) || routeMetrics;
+      const countryMetrics = metricsByCountry.get(countryKey) || routeMetrics;
+
+      const merchantProviderMetrics =
+        metricsByMerchantProvider.get(merchantProviderKey) || routeMetrics;
+      const providerMethodMetrics =
+        metricsByProviderMethod.get(providerMethodKey) || routeMetrics;
+      const methodCountryMetrics =
+        metricsByMethodCountry.get(methodCountryKey) || routeMetrics;
+
       const status = this.determineRouteStatus(
         routeMetrics,
         criticalErrorRate,
         warningErrorRate,
         criticalApprovalRate,
         warningApprovalRate,
+        criticalApprovalLossRate,
+        warningApprovalLossRate,
       );
 
-      // Obtener métricas específicas por nivel
-      const merchantMetrics =
-        metricsByMerchant.get(merchant_id) || routeMetrics;
-      const providerMetrics =
-        metricsByProvider.get(provider_id) || routeMetrics;
-      const methodMetrics = metricsByMethod.get(method_id) || routeMetrics;
-      const countryMetrics = metricsByCountry.get(country_code) || routeMetrics;
-
-      const merchantProviderMetrics =
-        metricsByMerchantProvider.get(`${merchant_id}|${provider_id}`) ||
-        routeMetrics;
-      const providerMethodMetrics =
-        metricsByProviderMethod.get(`${provider_id}|${method_id}`) ||
-        routeMetrics;
-      const methodCountryMetrics =
-        metricsByMethodCountry.get(`${method_id}|${country_code}`) ||
-        routeMetrics;
-
-      // Crear nodos con sus métricas específicas
       const merchantNode: GraphNode = {
         id: `merchant-${merchant_id}`,
         label: routeMetrics.merchant_name,
@@ -301,12 +388,16 @@ export class HealthGraphService {
           warningErrorRate,
           criticalApprovalRate,
           warningApprovalRate,
+          criticalApprovalLossRate,
+          warningApprovalLossRate,
         ),
         metrics: {
           approval_rate: merchantMetrics.approval_rate,
           error_rate: merchantMetrics.error_rate,
           p95_latency: merchantMetrics.p95_latency,
           sample_size: merchantMetrics.sample_size,
+          approval_loss_rate: merchantMetrics.approval_loss_rate,
+          baseline_approval_rate: merchantMetrics.baseline_approval_rate,
         },
       };
 
@@ -320,12 +411,16 @@ export class HealthGraphService {
           warningErrorRate,
           criticalApprovalRate,
           warningApprovalRate,
+          criticalApprovalLossRate,
+          warningApprovalLossRate,
         ),
         metrics: {
           approval_rate: providerMetrics.approval_rate,
           error_rate: providerMetrics.error_rate,
           p95_latency: providerMetrics.p95_latency,
           sample_size: providerMetrics.sample_size,
+          approval_loss_rate: providerMetrics.approval_loss_rate,
+          baseline_approval_rate: providerMetrics.baseline_approval_rate,
         },
       };
 
@@ -339,12 +434,16 @@ export class HealthGraphService {
           warningErrorRate,
           criticalApprovalRate,
           warningApprovalRate,
+          criticalApprovalLossRate,
+          warningApprovalLossRate,
         ),
         metrics: {
           approval_rate: methodMetrics.approval_rate,
           error_rate: methodMetrics.error_rate,
           p95_latency: methodMetrics.p95_latency,
           sample_size: methodMetrics.sample_size,
+          approval_loss_rate: methodMetrics.approval_loss_rate,
+          baseline_approval_rate: methodMetrics.baseline_approval_rate,
         },
       };
 
@@ -358,12 +457,16 @@ export class HealthGraphService {
           warningErrorRate,
           criticalApprovalRate,
           warningApprovalRate,
+          criticalApprovalLossRate,
+          warningApprovalLossRate,
         ),
         metrics: {
           approval_rate: countryMetrics.approval_rate,
           error_rate: countryMetrics.error_rate,
           p95_latency: countryMetrics.p95_latency,
           sample_size: countryMetrics.sample_size,
+          approval_loss_rate: countryMetrics.approval_loss_rate,
+          baseline_approval_rate: countryMetrics.baseline_approval_rate,
         },
       };
 
@@ -379,6 +482,8 @@ export class HealthGraphService {
               warningErrorRate,
               criticalApprovalRate,
               warningApprovalRate,
+              criticalApprovalLossRate,
+              warningApprovalLossRate,
             ),
           ),
           label: this.getEdgeLabel(
@@ -388,6 +493,8 @@ export class HealthGraphService {
               warningErrorRate,
               criticalApprovalRate,
               warningApprovalRate,
+              criticalApprovalLossRate,
+              warningApprovalLossRate,
             ),
             merchantProviderMetrics,
           ),
@@ -395,6 +502,7 @@ export class HealthGraphService {
             approval_rate: merchantProviderMetrics.approval_rate,
             error_rate: merchantProviderMetrics.error_rate,
             p95_latency: merchantProviderMetrics.p95_latency,
+            approval_loss_rate: merchantProviderMetrics.approval_loss_rate,
           },
         },
         {
@@ -407,6 +515,8 @@ export class HealthGraphService {
               warningErrorRate,
               criticalApprovalRate,
               warningApprovalRate,
+              criticalApprovalLossRate,
+              warningApprovalLossRate,
             ),
           ),
           label: this.getEdgeLabel(
@@ -416,6 +526,8 @@ export class HealthGraphService {
               warningErrorRate,
               criticalApprovalRate,
               warningApprovalRate,
+              criticalApprovalLossRate,
+              warningApprovalLossRate,
             ),
             providerMethodMetrics,
           ),
@@ -423,6 +535,7 @@ export class HealthGraphService {
             approval_rate: providerMethodMetrics.approval_rate,
             error_rate: providerMethodMetrics.error_rate,
             p95_latency: providerMethodMetrics.p95_latency,
+            approval_loss_rate: providerMethodMetrics.approval_loss_rate,
           },
         },
         {
@@ -435,6 +548,8 @@ export class HealthGraphService {
               warningErrorRate,
               criticalApprovalRate,
               warningApprovalRate,
+              criticalApprovalLossRate,
+              warningApprovalLossRate,
             ),
           ),
           label: this.getEdgeLabel(
@@ -444,6 +559,8 @@ export class HealthGraphService {
               warningErrorRate,
               criticalApprovalRate,
               warningApprovalRate,
+              criticalApprovalLossRate,
+              warningApprovalLossRate,
             ),
             methodCountryMetrics,
           ),
@@ -451,6 +568,7 @@ export class HealthGraphService {
             approval_rate: methodCountryMetrics.approval_rate,
             error_rate: methodCountryMetrics.error_rate,
             p95_latency: methodCountryMetrics.p95_latency,
+            approval_loss_rate: methodCountryMetrics.approval_loss_rate,
           },
         },
       ];
@@ -516,6 +634,8 @@ export class HealthGraphService {
         provider_name: '',
         method_name: '',
         country_name: '',
+        approval_loss_rate: 0, // No calculamos pérdida para agregaciones parciales
+        baseline_approval_rate: 0,
       });
     }
 
@@ -528,13 +648,31 @@ export class HealthGraphService {
     warningErrorRate: number,
     criticalApprovalRate: number,
     warningApprovalRate: number,
+    criticalApprovalLossRate: number,
+    warningApprovalLossRate: number,
   ): NodeStatus {
+    // Verificar tasa de pérdida de aprobaciones
+    if (
+      metrics.approval_loss_rate !== undefined &&
+      metrics.approval_loss_rate >= criticalApprovalLossRate
+    ) {
+      return NodeStatus.CRITICAL;
+    }
+
     if (
       metrics.error_rate >= criticalErrorRate ||
       metrics.approval_rate <= criticalApprovalRate ||
       metrics.sample_size < 10
     ) {
       return NodeStatus.CRITICAL;
+    }
+
+    // Verificar warning de pérdida de aprobaciones
+    if (
+      metrics.approval_loss_rate !== undefined &&
+      metrics.approval_loss_rate >= warningApprovalLossRate
+    ) {
+      return NodeStatus.WARNING;
     }
 
     if (
@@ -560,6 +698,14 @@ export class HealthGraphService {
   }
 
   private getEdgeLabel(status: NodeStatus, metrics: RouteMetrics): string {
+    // Incluir información de pérdida de aprobaciones en el label si es relevante
+    if (
+      metrics.approval_loss_rate !== undefined &&
+      metrics.approval_loss_rate > 0.05
+    ) {
+      return `⚠️ Pérdida de aprobación: -${(metrics.approval_loss_rate * 100).toFixed(1)}%`;
+    }
+
     switch (status) {
       case NodeStatus.CRITICAL:
         return `Fallos consistentes (error: ${(metrics.error_rate * 100).toFixed(1)}%)`;

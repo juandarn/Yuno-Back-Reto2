@@ -311,7 +311,7 @@ export class TransactionService {
     };
   }
   private buildApprovedAggQuery(params: {
-    merchant_id: string;
+    merchant_id?: string;
     provider_id?: number;
     method_id?: number;
     country_code?: string;
@@ -323,13 +323,16 @@ export class TransactionService {
       .select(`date_trunc('day', tx.date)`, 'day')
       .addSelect(`COUNT(*)`, 'approved')
       .where('tx.status = :status', { status: TxStatus.APPROVED })
-      .andWhere('tx.merchant_id = :merchant_id', {
-        merchant_id: params.merchant_id,
-      })
       .andWhere('tx.date >= :start AND tx.date < :end', {
         start: params.start,
         end: params.end,
       });
+
+    if (params.merchant_id) {
+      qb.andWhere('tx.merchant_id = :merchant_id', {
+        merchant_id: params.merchant_id,
+      });
+    }
 
     if (params.provider_id !== undefined) {
       qb.andWhere('tx.provider_id = :provider_id', {
@@ -351,7 +354,7 @@ export class TransactionService {
   }
 
   private async getApprovedDailySeries(params: {
-    merchant_id: string;
+    merchant_id?: string;
     provider_id?: number;
     method_id?: number;
     country_code?: string;
@@ -379,8 +382,9 @@ export class TransactionService {
     x.setUTCDate(x.getUTCDate() + days);
     return x;
   }
+  
   async getApprovedExpectedVsActual(params: {
-    merchant_id: string;
+    merchant_id?: string;
     provider_id?: number;
     method_id?: number;
     country_code?: string;
@@ -399,22 +403,13 @@ export class TransactionService {
     const prevFrom = this.addDaysUTC(from, -7);
     const prevTo = this.addDaysUTC(to, -7);
 
-    const actualMap = await this.getApprovedDailySeries({
-      merchant_id: params.merchant_id,
-      provider_id: params.provider_id,
-      method_id: params.method_id,
-      country_code: params.country_code,
-      start: from,
-      end: to,
-    });
-
-    const prevMap = await this.getApprovedDailySeries({
+    const fullMap = await this.getApprovedDailySeries({
       merchant_id: params.merchant_id,
       provider_id: params.provider_id,
       method_id: params.method_id,
       country_code: params.country_code,
       start: prevFrom,
-      end: prevTo,
+      end: to, // Fetches from prevFrom to to (exclusive) covers both weeks
     });
 
     const series: Array<{ date: string; actual: number; expected: number }> =
@@ -429,8 +424,8 @@ export class TransactionService {
 
       series.push({
         date: dateStr,
-        actual: actualMap.get(dateStr) ?? 0,
-        expected: prevMap.get(prevDateStr) ?? 0,
+        actual: fullMap.get(dateStr) ?? 0,
+        expected: fullMap.get(prevDateStr) ?? 0,
       });
 
       cursor.setUTCDate(cursor.getUTCDate() + 1);

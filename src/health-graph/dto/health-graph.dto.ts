@@ -1,6 +1,3 @@
-import { IsOptional, IsString, IsNumber, IsBoolean } from 'class-validator';
-import { Type } from 'class-transformer';
-
 export enum NodeStatus {
   OK = 'ok',
   WARNING = 'warning',
@@ -13,32 +10,39 @@ export enum EdgeStatus {
   CRITICAL = 'critical',
 }
 
-export class GraphNode {
+export interface NodeMetrics {
+  approval_rate: number;
+  error_rate: number;
+  p95_latency: number;
+  sample_size: number;
+  approval_loss_rate?: number; // Nueva métrica: tasa de pérdida de aprobaciones
+  baseline_approval_rate?: number; // Tasa de aprobación del período baseline
+}
+
+export interface EdgeMetrics {
+  approval_rate: number;
+  error_rate: number;
+  p95_latency: number;
+  approval_loss_rate?: number; // Nueva métrica para edges
+}
+
+export interface GraphNode {
   id: string;
   label: string;
   type: 'merchant' | 'provider' | 'method' | 'country';
   status: NodeStatus;
-  metrics?: {
-    approval_rate?: number;
-    error_rate?: number;
-    p95_latency?: number;
-    sample_size?: number;
-  };
+  metrics: NodeMetrics;
 }
 
-export class GraphEdge {
+export interface GraphEdge {
   from: string;
   to: string;
   status: EdgeStatus;
-  label?: string;
-  metrics?: {
-    approval_rate?: number;
-    error_rate?: number;
-    p95_latency?: number;
-  };
+  label: string;
+  metrics: EdgeMetrics;
 }
 
-export class PaymentRoute {
+export interface PaymentRoute {
   merchant: GraphNode;
   provider: GraphNode;
   method: GraphNode;
@@ -47,61 +51,30 @@ export class PaymentRoute {
   edges: GraphEdge[];
 }
 
-export class HealthGraphResponse {
+export interface HealthGraphSummary {
+  total_routes: number;
+  critical_routes: number;
+  warning_routes: number;
+  ok_routes: number;
+}
+
+export interface HealthGraphResponse {
   routes: PaymentRoute[];
-  summary: {
-    total_routes: number;
-    critical_routes: number;
-    warning_routes: number;
-    ok_routes: number;
-  };
+  summary: HealthGraphSummary;
   timestamp: Date;
 }
 
 export class QueryHealthGraphDto {
-  @IsOptional()
-  @IsString()
   merchant_id?: string;
-
-  @IsOptional()
-  @IsString()
   provider_id?: string;
-
-  @IsOptional()
-  @IsString()
   method_id?: string;
-
-  @IsOptional()
-  @IsString()
   country_code?: string;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  time_window_minutes?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  critical_error_rate?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  warning_error_rate?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  critical_approval_rate?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  warning_approval_rate?: number;
-
-  @IsOptional()
-  @Type(() => Boolean)
-  @IsBoolean()
-  only_issues?: boolean;
+  time_window_minutes?: number; // default: 60
+  only_issues?: boolean; // default: false
+  critical_error_rate?: number; // default: 0.3
+  warning_error_rate?: number; // default: 0.15
+  critical_approval_rate?: number; // default: 0.5
+  warning_approval_rate?: number; // default: 0.7
+  critical_approval_loss_rate?: number; // default: 0.2 (20% de pérdida)
+  warning_approval_loss_rate?: number; // default: 0.1 (10% de pérdida)
 }
