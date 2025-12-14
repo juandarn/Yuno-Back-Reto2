@@ -377,7 +377,8 @@ export class RiskNotificationService {
   ) {
     let riskNotification = notification;
 
-    if (!riskNotification && entity) {
+    if (riskNotification == null) {
+      if (entity == null) return; // o lanza error si entity es obligatoria
       riskNotification = this.riskNotificationRepository.create({
         entity_type: entity.entity_type,
         entity_id: entity.entity_id,
@@ -389,13 +390,14 @@ export class RiskNotificationService {
         escalated_to_all: true,
         escalated_at: new Date(),
       });
-      await this.riskNotificationRepository.save(riskNotification);
-    } else if (riskNotification) {
+    } else {
       riskNotification.status = 'escalated' as any;
       riskNotification.escalated_to_all = true;
       riskNotification.escalated_at = new Date();
-      await this.riskNotificationRepository.save(riskNotification);
     }
+
+    // esto corre para ambos casos (nuevo o existente)
+    await this.riskNotificationRepository.save(riskNotification);
 
     const yunoUsers = await this.userRepository.find({
       where: { type: 'YUNO', active: true },
