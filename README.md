@@ -125,10 +125,12 @@ graph TB
     end
     
     subgraph "Backend - Railway"
-        API[NestJS API]
-        CRON[Cron Jobs]
-        FP[Failure Prediction Engine]
-        NOTIF[Notification System]
+        subgraph "NestJS API"
+            API[REST API]
+            FP[Failure Prediction Engine]
+            NOTIF[Notification System]
+            CRON[Cron Jobs]
+        end
     end
     
     subgraph "Database - Railway"
@@ -141,19 +143,22 @@ graph TB
         SLACK[Slack Webhooks]
     end
     
-    FE -->|REST API| API
+    FE -->|HTTPS REST| API
     API --> DB
-    CRON -->|Schedule| NOTIF
-    FP -->|Analysis| DB
-    NOTIF -->|Send| GMAIL
-    NOTIF -->|Send| TWILIO
-    NOTIF -->|Send| SLACK
+    API --> FP
+    FP --> DB
+    CRON --> NOTIF
+    FP --> NOTIF
+    NOTIF -->|SMTP| GMAIL
+    NOTIF -->|API| TWILIO
+    NOTIF -->|Webhook| SLACK
     
     style FE fill:#61dafb
     style API fill:#e0234e
     style DB fill:#336791
     style FP fill:#ff9900
     style NOTIF fill:#4caf50
+    style CRON fill:#9c27b0
 ```
 
 ### Component Diagram
@@ -175,6 +180,8 @@ graph TB
         FPS[Failure Prediction Service]
         AS[Alert Service]
         NS[Notification Service]
+        MS[Merchant Service]
+        PS[Provider Service]
         HGS[Health Graph Service]
     end
     
@@ -193,11 +200,16 @@ graph TB
     FPC --> FPS
     AC --> AS
     NC --> NS
+    MC --> MS
+    PC --> PS
     HGC --> HGS
     
     TS --> TR
     FPS --> TR
     AS --> TR
+    NS --> TR
+    MS --> TR
+    PS --> TR
     HGS --> TR
     
     NS --> EMAIL
@@ -207,45 +219,20 @@ graph TB
     TR --> ENT
     
     style TC fill:#e1bee7
+    style FPC fill:#e1bee7
+    style AC fill:#e1bee7
+    style NC fill:#e1bee7
     style TS fill:#ce93d8
+    style FPS fill:#ce93d8
+    style AS fill:#ce93d8
+    style NS fill:#ce93d8
     style TR fill:#ba68c8
-    style NS fill:#4caf50
+    style EMAIL fill:#4caf50
+    style WA fill:#4caf50
+    style SL fill:#4caf50
 ```
 
-### Microservices Architecture
 
-```mermaid
-graph LR
-    subgraph "Core Services"
-        TS[Transaction Service]
-        FPS[Failure Prediction]
-        AS[Alert Service]
-    end
-    
-    subgraph "Support Services"
-        NS[Notification Service]
-        MS[Metric Service]
-        HGS[Health Graph Service]
-    end
-    
-    subgraph "Background Jobs"
-        CRON1[Alert Scanner]
-        CRON2[Metric Aggregator]
-        CRON3[Notification Sender]
-    end
-    
-    TS --> FPS
-    FPS --> AS
-    AS --> NS
-    
-    CRON1 --> AS
-    CRON2 --> MS
-    CRON3 --> NS
-    
-    style FPS fill:#ff9900
-    style AS fill:#f44336
-    style NS fill:#4caf50
-```
 
 ---
 
